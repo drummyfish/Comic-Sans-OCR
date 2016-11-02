@@ -1,0 +1,31 @@
+The following text has been taken from Wikipedia article on
+Comic Sans font (https://en.wikipedia.org/wiki/Comic_Sans).
+Comic Sans
+Comic Sans MS, commonly referred to as Comic Sans, is a sans-serif casual script
+typeface designed by Vincent Connare and released in 1994 by Microsoft Corporation.
+It is a casual, non-connecting script inspired by comic book lettering, intended for
+use in informal documents and children's materials.
+The typeface has been supplied with Microsoft Windows since the introduction of
+Windows 95, initially as a supplemental font in the Windows Plus Pack and later in
+Microsoft Comic Chat. Describing it, Microsoft has explained that "this casual but
+legible face has proved very popular with a wide variety of people."[1]
+The typeface's widespread use, often in situations for which it was not intended, has
+been criticized.
+History
+Microsoft designer Vincent Connare began work on Comic Sans in October 1994.
+Connare had already created child-oriented fonts for various applications, so when he
+saw a beta version of Microsoft Bob that used Times New Roman in the word balloons
+of cartoon characters, he felt that the result was a formal look inappropriate for a
+program intended to introduce younger users to computers. His decision was to
+create a new face based on the lettering style of comic books he had in his office,
+specifically The Dark Knight Returns (lettered by John Costanza) and Watchmen
+(lettered by Dave Gibbons).[3]
+He completed the face too late for inclusion in MS Bob, but the programmers of
+Microsoft 3D Movie Maker, which also used cartoon guides and speech bubbles, began
+to use it. The speech bubbles eventually were phased out and replaced by actual
+sound, but Comic Sans stayed for the program’s pop-up windows and help sections.
+The typeface later shipped with the Windows 95 Plus! Pack. It then became a
+standard font for the OEM version of Windows 95. Finally, the font became one of
+the default fonts for Microsoft Publisher and Microsoft Internet Explorer. The font
+is also used in Microsoft Comic Chat, which was released in 1996 with Internet
+Explorer 3.0.

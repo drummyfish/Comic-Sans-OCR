@@ -1,0 +1,25 @@
+This text serves as a basis for OCR Comic Sans dataset for FIT
+BUT School project, font size 16. It will be printed and scanned
+again. Here’s a funny story from reddit.com:
+So I'm hoping a load of people are going to come out in support
+of me here but I've got that sinking feeling I may be alone in
+this.
+Our toilet broke so I was in shopping for new ones and the sales
+person joked (no doubt for the millionth time) that I'll want one
+that automatically puts the seat down after I'm finished with
+it. I 'joked' back and said if I didn't have a wife I could save
+money and not buy one with a seat and I'd never have to hear
+women complaining about putting it down again. To which he gave
+me a strange look and said "but what about when you need to
+poop?". I naturally pointed out that I'm a guy and therefore
+don't put the seat down, I sit on the rim of the bowl. Several
+embarrassing moments later, I realize that I've misunderstood
+my entire life and that guys do indeed use the toilet seat. I left
+empty handed and red faced.
+Thinking about it now, it makes sense. Especially how men's
+restrooms have seats. But I just assumed it was a unisex/cost
+saving/oversight deal.
+Here are some characters for debugging:
+A B C 3 2 1 x c f h 7 A O 0 9 6 B 8 W M m I l i L w Q . ? ! / _
+ABC321xcfh7AO096B8WMmIliLwQ.?!/_
+EVERYTHING’S BIG

@@ -1,0 +1,28 @@
+Optical character recognition
+Again, this text is from Wikipedia, this time block-aligned.
+Optical character recognition (optical character reader, OCR) is the mechanical or
+electronic conversion of images of typed, handwritten or printed text into machine-
+encoded text, whether from a scanned document, a photo of a document, a scene-
+photo (for example the text on signs and billboards in a landscape photo) or from
+subtitle text superimposed on an image (for example from a television broadcast).[1]
+It is widely used as a form of information entry from printed paper data records,
+whether passport documents, invoices, bank statements, computerised receipts,
+business cards, mail, printouts of static-data, or any suitable documentation. It is a
+common method of digitising printed texts so that they can be electronically edited,
+searched, stored more compactly, displayed on-line, and used in machine processes
+such as cognitive computing, machine translation, (extracted) text-to-speech, key
+data and text mining. OCR is a field of research in pattern recognition, artificial
+intelligence and computer vision.
+And some center aligned poetry:
+Once upon a midnight dreary, while I pondered, weak and weary, 
+Over many a quaint and curious volume of forgotten lore— 
+While I nodded, nearly napping, suddenly there came a tapping, 
+As of some one gently rapping, rapping at my chamber door. 
+“’Tis some visitor,” I muttered, “tapping at my chamber door— 
+Only this and nothing more.” 
+Ah, distinctly I remember it was in the bleak December; 
+And each separate dying ember wrought its ghost upon the floor. 
+Eagerly I wished the morrow;—vainly I had sought to borrow 
+From my books surcease of sorrow—sorrow for the lost Lenore— 
+For the rare and radiant maiden whom the angels name Lenore— 
+Nameless here for evermore.
