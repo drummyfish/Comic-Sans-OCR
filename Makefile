@@ -1,5 +1,5 @@
 all:
-	g++ main.cpp `pkg-config --libs opencv` -o ocr
+	g++ main.cpp -Wall -pedantic -std=c++11 `pkg-config --libs opencv` -o ocr
 run:
 	 ./ocr "dataset/page 1 small.png"
 run2:

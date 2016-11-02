@@ -8,8 +8,9 @@
 
 #define DEBUG 1
 
-#define MIN_CHAR_WIDTH 2
-#define MIN_CHAR_HEIGHT 4
+#define MIN_CHAR_WIDTH_TO_IMAGE_WIDTH_RATIO 0.0025
+#define MIN_CHAR_HEIGHT_TO_IMAGE_WIDTH_RATIO 0.005
+#define SPACE_TO_LINE_HEIGHT_RATIO 0.3         // how many pixels is considered a space
 #define LINE_BRIGHTNESS_THRESHOLD 0.99
 #define COLUMN_BRIGHTNESS_THRESHOLD 0.97
 
@@ -145,6 +146,9 @@ int main(int argc, char *argv[])
     Mat input_image;
     input_image = imread(argv[1],CV_LOAD_IMAGE_COLOR);
 
+    unsigned int min_char_width = (int) (MIN_CHAR_WIDTH_TO_IMAGE_WIDTH_RATIO * input_image.cols);
+    unsigned int min_char_height = (int) (MIN_CHAR_HEIGHT_TO_IMAGE_WIDTH_RATIO * input_image.cols);
+
     if(!input_image.data)
       {
         cout <<  "Could not open the image." << endl;
@@ -159,34 +163,47 @@ int main(int argc, char *argv[])
     //threshold(grayscale_thresholded_image,grayscale_thresholded_image,mean(grayscale_thresholded_image)[0],255,THRESH_BINARY);
     //imwrite("debug_threshold.png",grayscale_thresholded_image);
 
-    vector<segment_1d> lines = segmentation_1d(grayscale_thresholded_image,true,LINE_BRIGHTNESS_THRESHOLD,MIN_CHAR_HEIGHT);
+    vector<segment_1d> lines = segmentation_1d(grayscale_thresholded_image,true,LINE_BRIGHTNESS_THRESHOLD,min_char_height);
 
     {
       Mat highlighted_lines;
       cvtColor(grayscale_thresholded_image,highlighted_lines,CV_GRAY2RGB,3);
 
-      for (int i = 0; i < lines.size(); i++)
+      for (unsigned int i = 0; i < lines.size(); i++)
         {
           Mat line_image(highlighted_lines,Rect(0,lines[i].start,highlighted_lines.cols,lines[i].length));
 
-          vector<segment_1d> columns = segmentation_1d(line_image,false,COLUMN_BRIGHTNESS_THRESHOLD,MIN_CHAR_WIDTH);
+          vector<segment_1d> columns = segmentation_1d(line_image,false,COLUMN_BRIGHTNESS_THRESHOLD,min_char_width);
 
-          for (int j = 0; j < columns.size(); j++)
+          unsigned int space_pixels = (int) (SPACE_TO_LINE_HEIGHT_RATIO * lines[i].length);       // how many pixels is considered a space
+          unsigned int previous_character_stop = 0;                                               // for detecting spaces
+          
+          for (unsigned int j = 0; j < columns.size(); j++)
             {
-              Rect image_area = correct_character_cutout(highlighted_lines,Rect(columns[j].start,lines[i].start,columns[j].length,lines[i].length),LINE_BRIGHTNESS_THRESHOLD);
+              Rect char_area = correct_character_cutout(highlighted_lines,Rect(columns[j].start,lines[i].start,columns[j].length,lines[i].length),LINE_BRIGHTNESS_THRESHOLD);
 
-              Mat char_image(highlighted_lines,image_area);
+              Mat char_image(highlighted_lines,char_area);
 
-
-              if (image_area.width >= MIN_CHAR_WIDTH && image_area.height >= MIN_CHAR_HEIGHT)
+              if (char_area.width >= (int) min_char_width && char_area.height >= (int) min_char_height)
                 {
                   // character cutout available here
+
+                  if (j != 0 && (char_area.x - previous_character_stop) >= space_pixels)
+                    cout << " ";
+
+                  previous_character_stop = char_area.x + char_area.width;
+
+                  char recognised_character = '?';
+
+                  cout << recognised_character;
+
                   char_image -= Scalar(100,100,0);  // highlight the character
                 }
             }
 
-          line_image -= Scalar(0,50,0);         // highlight the line
+          cout << endl;
 
+          line_image -= Scalar(0,50,0);         // highlight the line
         }
 
       imwrite("debug_lines.png",highlighted_lines);
