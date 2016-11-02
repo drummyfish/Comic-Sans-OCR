@@ -8,6 +8,11 @@
 
 #define DEBUG 1
 
+#define MIN_CHAR_WIDTH 2
+#define MIN_CHAR_HEIGHT 4
+#define LINE_BRIGHTNESS_THRESHOLD 0.99
+#define COLUMN_BRIGHTNESS_THRESHOLD 0.97
+
 using namespace std;
 using namespace cv;
 
@@ -19,15 +24,21 @@ typedef struct
 
 /*
   Checks if given row (or column) is contains only blank space or not depending on given
-  white/black ratio threshold.
-*/
+  white/black ratio threshold. */
 
 bool is_nonblank(Mat input_matrix, bool rows, int row_col_index, double threshold = 0.5)
   {
     double avg;
+
+ //   if (row_col_index < 0 || (row_col_index >= rows ? input_matrix.rows : input_matrix.cols))
+ //     return false;
+
     avg = mean(rows ? input_matrix.row(row_col_index) : input_matrix.col(row_col_index))[0] / 255.0;
     return avg <= threshold;
   }
+
+/*
+  Performs a 1D segmentation on either image rows or columns. */
 
 vector<segment_1d> segmentation_1d(Mat input_matrix, bool vertical, double threshold, unsigned int minimum_segment_length)
   {
@@ -58,6 +69,60 @@ vector<segment_1d> segmentation_1d(Mat input_matrix, bool vertical, double thres
                 state = 0;
               }
           }
+      }
+
+    return result;
+  }
+
+/*
+  Corrects a detected character region. */
+
+Rect correct_character_cutout(Mat input_image, Rect image_cutout, double brightness_threshold)
+  {
+    Rect result = Rect(image_cutout);
+
+    Mat column_image = Mat(input_image,Rect(image_cutout.x,0,image_cutout.width,input_image.rows));
+
+    for (int i = 0; i < image_cutout.height; i++)          // shrink if possible
+      {
+        bool go_on = false;
+
+        if (!is_nonblank(column_image,true,result.y,brightness_threshold))
+          {
+            result.y += 1;
+            result.height -= 1;
+            go_on = true;
+          }
+
+        if (!is_nonblank(column_image,true,result.y + result.height - 1,brightness_threshold))
+          {
+            result.height -= 1;
+            go_on = true;
+          }
+
+        if (!go_on)
+          break;
+      }
+
+    for (int i = 0; i < 20; i++)     // expand up by 20 px if possible
+      {
+        bool go_on = false;
+
+        if (is_nonblank(column_image,true,result.y - 1,brightness_threshold))
+          {
+            result.y -= 1;
+            result.height += 1;
+            go_on = true;
+          }
+
+        if (is_nonblank(column_image,true,result.y + result.height,brightness_threshold))
+          {
+            result.height += 1;
+            go_on = true;
+          }
+
+        if (!go_on)
+          break;
       }
 
     return result;
@@ -94,7 +159,7 @@ int main(int argc, char *argv[])
     //threshold(grayscale_thresholded_image,grayscale_thresholded_image,mean(grayscale_thresholded_image)[0],255,THRESH_BINARY);
     //imwrite("debug_threshold.png",grayscale_thresholded_image);
 
-    vector<segment_1d> lines = segmentation_1d(grayscale_thresholded_image,true,0.99,4);
+    vector<segment_1d> lines = segmentation_1d(grayscale_thresholded_image,true,LINE_BRIGHTNESS_THRESHOLD,MIN_CHAR_HEIGHT);
 
     {
       Mat highlighted_lines;
@@ -104,12 +169,20 @@ int main(int argc, char *argv[])
         {
           Mat line_image(highlighted_lines,Rect(0,lines[i].start,highlighted_lines.cols,lines[i].length));
 
-          vector<segment_1d> columns = segmentation_1d(line_image,false,0.99,2);
+          vector<segment_1d> columns = segmentation_1d(line_image,false,COLUMN_BRIGHTNESS_THRESHOLD,MIN_CHAR_WIDTH);
 
           for (int j = 0; j < columns.size(); j++)
             {
-              Mat char_image(line_image,Rect(columns[j].start,0,columns[j].length,line_image.rows));
-              char_image -= Scalar(100,100,0);  // highlight the character
+              Rect image_area = correct_character_cutout(highlighted_lines,Rect(columns[j].start,lines[i].start,columns[j].length,lines[i].length),LINE_BRIGHTNESS_THRESHOLD);
+
+              Mat char_image(highlighted_lines,image_area);
+
+
+              if (image_area.width >= MIN_CHAR_WIDTH && image_area.height >= MIN_CHAR_HEIGHT)
+                {
+                  // character cutout available here
+                  char_image -= Scalar(100,100,0);  // highlight the character
+                }
             }
 
           line_image -= Scalar(0,50,0);         // highlight the line
