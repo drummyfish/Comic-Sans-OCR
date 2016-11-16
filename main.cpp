@@ -6,7 +6,7 @@
 #include <sstream>
 #include <vector>
 
-#define DEBUG 1
+#define DEBUG true
 
 #define MIN_CHAR_WIDTH_TO_IMAGE_WIDTH_RATIO 0.0025
 #define MIN_CHAR_HEIGHT_TO_IMAGE_WIDTH_RATIO 0.005
@@ -17,11 +17,84 @@
 using namespace std;
 using namespace cv;
 
+#define DATASET_LOCATION "dataset/chars/no noise/"
+
 typedef struct
   {
     unsigned int start;
     unsigned int length;
   } segment_1d;
+
+int classifier_to_use;      // says which classifier will be used: 0 - simple classifier, TODO
+
+unsigned char POSSIBLE_CHARACTERS[] =
+  {
+    'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
+    'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+    '0','1','2','3','4','5','6','7','8','9',
+    '?',/*'-',*/',','.'
+  };
+
+Mat average_character_images[sizeof(POSSIBLE_CHARACTERS)];
+double average_w_to_h_ratios[sizeof(POSSIBLE_CHARACTERS)];
+
+/*
+  Converts an ASCII character to a name used for files in the dataset.
+  */
+
+string character_to_filesystem_name(unsigned char input_character)
+  {
+    switch (input_character)
+      {
+        case '?': return "questionmark"; break;
+        case '-': return "dash"; break;
+        case '.': return "period"; break;
+        case ',': return "comma"; break;
+        default: return string(1,input_character); break;
+      }
+  }
+
+/*
+  Performs a simple classification of given sample by comparing it to average images of
+  characters. Returns the ASCII value of the character.
+  */
+
+unsigned char classify_simple(Mat input_image)
+  {
+    double minimum_error = 9999999999999.0;
+    unsigned int minimum_error_index = 0;
+
+    double w_to_h_ratio = input_image.cols / ((double) input_image.rows);
+
+    Mat image_copy = input_image.clone();
+    cvtColor(image_copy,image_copy,CV_RGB2GRAY);
+   // adaptiveThreshold(image_copy,image_copy,255,CV_ADAPTIVE_THRESH_MEAN_C,CV_THRESH_BINARY,5,15);
+
+    for (unsigned int i = 0; i < sizeof(POSSIBLE_CHARACTERS); i++)
+      {
+        Mat difference;
+        Mat resized_average_image;
+
+        resize(average_character_images[i],resized_average_image,Size(input_image.cols,input_image.rows));
+
+        absdiff(image_copy,resized_average_image,difference);
+        double error = mean(difference)[0] / 255.0;
+
+        double side_ratio_error = abs(w_to_h_ratio - average_w_to_h_ratios[i]) / 2.0;
+
+        error += side_ratio_error;
+
+     //   cout << error << endl;
+
+        if (error < minimum_error)
+          {
+            minimum_error = error;
+            minimum_error_index = i;
+          }
+      } 
+
+    return POSSIBLE_CHARACTERS[minimum_error_index];
+  }
 
 /*
   Checks if given row (or column) is contains only blank space or not depending on given
@@ -30,9 +103,6 @@ typedef struct
 bool is_nonblank(Mat input_matrix, bool rows, int row_col_index, double threshold = 0.5)
   {
     double avg;
-
- //   if (row_col_index < 0 || (row_col_index >= rows ? input_matrix.rows : input_matrix.cols))
- //     return false;
 
     avg = mean(rows ? input_matrix.row(row_col_index) : input_matrix.col(row_col_index))[0] / 255.0;
     return avg <= threshold;
@@ -143,6 +213,25 @@ int main(int argc, char *argv[])
         return 0;
       }
 
+    classifier_to_use = 0;   // TODO: read from parameters
+
+    if (classifier_to_use == 0)       // load average images if using a classifier that requires them
+      {
+        for (unsigned int i = 0; i < sizeof(POSSIBLE_CHARACTERS); i++)
+          {
+            string filename = DATASET_LOCATION + character_to_filesystem_name(POSSIBLE_CHARACTERS[i]) + "/average.png";
+            average_character_images[i] = imread(filename,CV_LOAD_IMAGE_COLOR);
+            cvtColor(average_character_images[i],average_character_images[i],CV_RGB2GRAY);
+            average_w_to_h_ratios[i] = average_character_images[i].cols / ((double) average_character_images[i].rows);
+          //  adaptiveThreshold(average_character_images[i],average_character_images[i],255,CV_ADAPTIVE_THRESH_MEAN_C,CV_THRESH_BINARY,5,15);            
+
+            /*
+            namedWindow("Display window",WINDOW_AUTOSIZE);
+            imshow("Display window",average_character_images[i]);                
+            waitKey(0); */
+          }
+      }
+
     Mat input_image;
     input_image = imread(argv[1],CV_LOAD_IMAGE_COLOR);
 
@@ -160,9 +249,6 @@ int main(int argc, char *argv[])
     cvtColor(input_image,grayscale_thresholded_image,CV_BGR2GRAY,1);
 
     adaptiveThreshold(grayscale_thresholded_image,grayscale_thresholded_image,255,CV_ADAPTIVE_THRESH_MEAN_C,CV_THRESH_BINARY,5,15);
-    //threshold(grayscale_thresholded_image,grayscale_thresholded_image,mean(grayscale_thresholded_image)[0],255,THRESH_BINARY);
-    //imwrite("debug_threshold.png",grayscale_thresholded_image);
-
     vector<segment_1d> lines = segmentation_1d(grayscale_thresholded_image,true,LINE_BRIGHTNESS_THRESHOLD,min_char_height);
 
     {
@@ -193,7 +279,9 @@ int main(int argc, char *argv[])
 
                   previous_character_stop = char_area.x + char_area.width;
 
-                  char recognised_character = '?';
+                  Mat character_cutout = input_image(char_area);
+
+                  char recognised_character = classify_simple(character_cutout);
 
                   cout << recognised_character;
 
@@ -206,7 +294,8 @@ int main(int argc, char *argv[])
           line_image -= Scalar(0,50,0);         // highlight the line
         }
 
-      imwrite("debug_lines.png",highlighted_lines);
+      if (DEBUG)
+        imwrite("debug_segments.png",highlighted_lines);
     }
 
     return 0;
