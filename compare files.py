@@ -33,4 +33,4 @@ with open(sys.argv[2],"r") as myfile:
 
 edit_distance = levenshtein(file_string1,file_string2)
 
-sys.exit(edit_distance)
+print(edit_distance)
