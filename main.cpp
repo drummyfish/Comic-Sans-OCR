@@ -255,6 +255,8 @@ int main(int argc, char *argv[])
       Mat highlighted_lines;
       cvtColor(grayscale_thresholded_image,highlighted_lines,CV_GRAY2RGB,3);
 
+      unsigned int character_number = 0;
+
       for (unsigned int i = 0; i < lines.size(); i++)
         {
           Mat line_image(highlighted_lines,Rect(0,lines[i].start,highlighted_lines.cols,lines[i].length));
@@ -281,11 +283,17 @@ int main(int argc, char *argv[])
 
                   Mat character_cutout = input_image(char_area);
 
-                  char recognised_character = classify_simple(character_cutout);
+                  /** saves characters as images, for making the dataset
+                  if (character_number > 200)
+                    imwrite("chars/img_" + std::to_string(character_number) + ".png",character_cutout);
+                  */
 
+                  char recognised_character = classify_simple(character_cutout);
+                    
                   cout << recognised_character;
 
                   char_image -= Scalar(100,100,0);  // highlight the character
+                  character_number++;
                 }
             }
 
