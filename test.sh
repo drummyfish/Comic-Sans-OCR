@@ -28,6 +28,37 @@ mkdir $TEST_DIR
 
 
 
+#-----------------------------------------------------
+
+if true; then
+
+ERROR_SUM=0
+
+echo "========== POV OCR, segmentation only =========="
+
+for PAGE_NUMBER in 1 2 3 4 5 6
+do
+  echo "page "$PAGE_NUMBER
+
+  measure_start
+  ./ocr "dataset/page "$PAGE_NUMBER" small.png" | sed "s/[^ ]/a/g" > $TEST_DIR"/"$PAGE_NUMBER"seg.txt"
+  measure_end
+
+  cat "dataset/page "$PAGE_NUMBER".txt" | sed "s/[^ ]/a/g" > $TEST_DIR"/"$PAGE_NUMBER"seg2.txt"
+
+  ERROR=$(python "compare files.py" $TEST_DIR"/"$PAGE_NUMBER"seg.txt" $TEST_DIR"/"$PAGE_NUMBER"seg2.txt")
+
+  echo "error: "$ERROR
+  ERROR_SUM=$(($ERROR_SUM+$ERROR))
+done
+
+echo "--------"
+reset_time
+echo "total error: "$ERROR_SUM
+
+fi
+
+#-----------------------------------------------------
 
 if true; then
 
@@ -55,12 +86,7 @@ echo "total error: "$ERROR_SUM
 
 fi
 
-
-
-
-
-
-
+#-----------------------------------------------------
 
 if true; then
 
@@ -90,4 +116,4 @@ echo "total error: "$ERROR_SUM
 
 fi
 
-#rm -r $TEST_DIR
+#-----------------------------------------------------
