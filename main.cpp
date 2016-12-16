@@ -21,6 +21,9 @@
 #include <string.h>
 
 #define DEBUG true
+#define DEBUG_CUTOUT_RESIZE 32
+#define DEBUG_CUTOUTS_MAX 50
+#define DEBUG_CUTOUTS_START 0
 
 #define DATASET_LOCATION "dataset/chars/no noise/"
 
@@ -496,6 +499,9 @@ int main(int argc, char *argv[])
     Mat input_image;
     input_image = imread(argv[1],CV_LOAD_IMAGE_COLOR);
 
+    Mat debug_cutouts(DEBUG_CUTOUT_RESIZE,DEBUG_CUTOUT_RESIZE,input_image.type());
+    int cutout_append_counter = 0;
+
     unsigned int min_char_width = (int) (MIN_CHAR_WIDTH_TO_IMAGE_WIDTH_RATIO * input_image.cols);
     unsigned int min_char_height = (int) (MIN_CHAR_HEIGHT_TO_IMAGE_WIDTH_RATIO * input_image.cols);
 
@@ -568,6 +574,28 @@ int main(int argc, char *argv[])
                         break;
                     }
 
+                  if (DEBUG && character_number >= DEBUG_CUTOUTS_START && cutout_append_counter < DEBUG_CUTOUTS_MAX)
+                    {
+                      int new_width = int((float(DEBUG_CUTOUT_RESIZE) / character_cutout.rows) * character_cutout.cols);
+                      new_width = new_width == 0 ? 1 : new_width;
+
+                      resize(character_cutout,character_cutout,Size(new_width,DEBUG_CUTOUT_RESIZE));
+ 
+                      if (cutout_append_counter < 1)
+                        {
+                          hconcat(&character_cutout,1,debug_cutouts);
+                        }
+                      else
+                        {
+                          Mat separator(DEBUG_CUTOUT_RESIZE,1,input_image.type());
+                          separator = cv::Scalar(0,0,255);
+                          Mat mat_array[] = {debug_cutouts,separator,character_cutout};
+                          hconcat(mat_array,3,debug_cutouts);
+                        }
+
+                      cutout_append_counter++;
+                    }
+
                   cout << recognised_character;
 
                   char_image -= Scalar(100,100,0);  // highlight the character
@@ -581,7 +609,10 @@ int main(int argc, char *argv[])
         }
 
       if (DEBUG)
-        imwrite("debug_segments.png",highlighted_lines);
+        {
+          imwrite("debug_segments.png",highlighted_lines);
+          imwrite("debug_cutouts.png",debug_cutouts);
+        }
     }
 
     return 0;
