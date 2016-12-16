@@ -23,15 +23,16 @@
 #define DEBUG true
 #define DEBUG_CUTOUT_RESIZE 32
 #define DEBUG_CUTOUTS_MAX 50
-#define DEBUG_CUTOUTS_START 0
+#define DEBUG_CUTOUTS_START 100
 
 #define DATASET_LOCATION "dataset/chars/no noise/"
 
 #define MIN_CHAR_WIDTH_TO_IMAGE_WIDTH_RATIO 0.0025
 #define MIN_CHAR_HEIGHT_TO_IMAGE_WIDTH_RATIO 0.005
-#define SPACE_TO_LINE_HEIGHT_RATIO 0.3         // how many pixels is considered a space
+#define SPACE_TO_LINE_HEIGHT_RATIO 0.3             // how many pixels is considered a space
 #define LINE_BRIGHTNESS_THRESHOLD 0.99
 #define COLUMN_BRIGHTNESS_THRESHOLD 0.97
+#define MAX_SEGMENT_WIDTH_TO_HEIGHT_RATIO 1.1      // if segment's w/h ratio is bigger, it will be split
 
 #define DATASET_LOCATION "dataset/chars/no noise/"
 #define COMMA 44
@@ -351,7 +352,7 @@ vector<segment_1d> segmentation_1d(Mat input_matrix, bool vertical, double thres
     vector<segment_1d> result;
     segment_1d helper_segment;
 
-    int state = 0;    // looking for segment start
+    int state = 0;  // looking for segment start
 
     for (int i = 0; i < (vertical ? input_matrix.rows : input_matrix.cols); i++)
       {
@@ -365,12 +366,31 @@ vector<segment_1d> segmentation_1d(Mat input_matrix, bool vertical, double thres
           }
         else
           {
-            if (state == 1)
+            if (state == 1)  // looking for segment end
               {
                 helper_segment.length = i - helper_segment.start;
 
-                if (helper_segment.length >= minimum_segment_length)
-                  result.push_back(helper_segment);
+                if (helper_segment.length >= minimum_segment_length)  // segment too small?
+                  {
+                    if (!vertical && (helper_segment.length / float(input_matrix.rows)) > MAX_SEGMENT_WIDTH_TO_HEIGHT_RATIO)  // segment too fat?
+                      {
+                        // split the segment in two
+                        segment_1d helper_segment2;
+
+                        // we split the segment in half, might be better to do on minimum
+                        helper_segment.length /= 2;
+
+                        helper_segment2.start = helper_segment.start + helper_segment.length;
+                        helper_segment2.length = helper_segment.length;
+
+                        result.push_back(helper_segment);
+                        result.push_back(helper_segment2);                      
+                      }
+                    else
+                      {
+                        result.push_back(helper_segment);   // add the segment as is
+                      }
+                  }
 
                 state = 0;
               }
@@ -516,6 +536,8 @@ int main(int argc, char *argv[])
     cvtColor(input_image,grayscale_thresholded_image,CV_BGR2GRAY,1);
 
     adaptiveThreshold(grayscale_thresholded_image,grayscale_thresholded_image,255,CV_ADAPTIVE_THRESH_MEAN_C,CV_THRESH_BINARY,5,15);
+
+    // segment lines:
     vector<segment_1d> lines = segmentation_1d(grayscale_thresholded_image,true,LINE_BRIGHTNESS_THRESHOLD,min_char_height);
 
     {
@@ -524,7 +546,7 @@ int main(int argc, char *argv[])
 
       unsigned int character_number = 0;
 
-      for (unsigned int i = 0; i < lines.size(); i++)
+      for (unsigned int i = 0; i < lines.size(); i++)  // for each segmented line
         {
           Mat line_image(highlighted_lines,Rect(0,lines[i].start,highlighted_lines.cols,lines[i].length));
 
@@ -533,7 +555,7 @@ int main(int argc, char *argv[])
           unsigned int space_pixels = (int) (SPACE_TO_LINE_HEIGHT_RATIO * lines[i].length);       // how many pixels is considered a space
           unsigned int previous_character_stop = 0;                                               // for detecting spaces
           
-          for (unsigned int j = 0; j < columns.size(); j++)
+          for (unsigned int j = 0; j < columns.size(); j++)  // for each column in the line
             {
               Rect char_area = correct_character_cutout(highlighted_lines,Rect(columns[j].start,lines[i].start,columns[j].length,lines[i].length),LINE_BRIGHTNESS_THRESHOLD);
 
@@ -556,6 +578,7 @@ int main(int argc, char *argv[])
                   */
 
                   char recognised_character;
+
                   switch (classifier_to_use)
                     {
                       case CLASSIFIER_NONE:
