@@ -1,12 +1,28 @@
+/**
+  Comic Sans OCR - FIT BUT school project
+  2016
+  Miloslav Číž
+  Daniel Žůrek
+ */
+
 #include <opencv2/core/core.hpp>
+#include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <opencv2/features2d/features2d.hpp>
+#include <opencv/ml.h>
+#include <cstdlib>
+#include <stdio.h>
+#include <dirent.h>
+#include <string.h>
 
 #define DEBUG true
+
+#define DATASET_LOCATION "dataset/chars/no noise/"
 
 #define MIN_CHAR_WIDTH_TO_IMAGE_WIDTH_RATIO 0.0025
 #define MIN_CHAR_HEIGHT_TO_IMAGE_WIDTH_RATIO 0.005
@@ -14,10 +30,15 @@
 #define LINE_BRIGHTNESS_THRESHOLD 0.99
 #define COLUMN_BRIGHTNESS_THRESHOLD 0.97
 
+#define DATASET_LOCATION "dataset/chars/no noise/"
+#define COMMA 44
+#define DASH 45
+#define PERIOD 46
+#define QUESTIONMARK 63
+#define KNN_FILENAME "knn_features.xml"
+
 using namespace std;
 using namespace cv;
-
-#define DATASET_LOCATION "dataset/chars/no noise/"
 
 typedef struct
   {
@@ -25,7 +46,11 @@ typedef struct
     unsigned int length;
   } segment_1d;
 
-int classifier_to_use;      // says which classifier will be used: 0 - simple classifier, TODO
+#define CLASSIFIER_NONE 0
+#define CLASSIFIER_SIMPLE 1
+#define CLASSIFIER_KNN 2
+
+int classifier_to_use;      ///< says which classifier will be used, see constants starting with CLASSIFIER_
 
 unsigned char POSSIBLE_CHARACTERS[] =
   {
@@ -37,6 +62,213 @@ unsigned char POSSIBLE_CHARACTERS[] =
 
 Mat average_character_images[sizeof(POSSIBLE_CHARACTERS)];
 double average_w_to_h_ratios[sizeof(POSSIBLE_CHARACTERS)];
+
+class OcrKnn    ///< KNN for OCR
+  {
+    public:
+      OcrKnn();
+      void load_data();                          ///< loads the images and prepares the classes
+      void prepare_knn();                        ///< gets HOG feature for each image and adds it to the train data
+      float classify(Mat input_image);
+      void train();
+      void test();
+
+      bool save_to_file();
+      bool load_from_file();
+
+      Mat image_preprocess(Mat input_image);
+      Mat image_deskew(Mat input_image);         ///< corrects the image skew
+      Mat get_hog_descriptor(Mat input_image);   ///< gets a HOG descriptor of the image
+
+    private:
+      int k;
+      Mat train_data, train_classes;
+      KNearest knn;
+      vector<string> images;
+      vector<int> classes;
+  };
+
+OcrKnn::OcrKnn()
+  {
+  }
+
+Mat OcrKnn::image_deskew(Mat input_image)
+  {
+    Mat thr;
+    threshold(input_image, thr, 200, 255, THRESH_BINARY_INV);
+
+    vector<Point> points;
+    Mat_<uchar>::iterator it = thr.begin<uchar>();
+    Mat_<uchar>::iterator end = thr.end<uchar>();
+
+    for (; it != end; ++it)
+      if (*it) points.push_back(it.pos());
+      	
+    RotatedRect box = minAreaRect(Mat(points));
+    Mat rot_mat = getRotationMatrix2D(box.center, box.angle, 1);
+
+    Mat rotated;
+    warpAffine(input_image, rotated, rot_mat, input_image.size(), INTER_CUBIC);
+	
+    return rotated;
+  }
+
+Mat OcrKnn::get_hog_descriptor(Mat preprocesed_image)
+  {
+    Mat Hogfeat;
+    HOGDescriptor hogDescriptor(Size(32, 16), Size(8, 8), Size(4, 4), Size(4, 4), 9);
+
+    vector<float> descriptorsValues;
+    vector<Point> locations;
+
+    hogDescriptor.compute(preprocesed_image, descriptorsValues, Size(32, 32), Size(0, 0), locations);
+    Hogfeat.create(descriptorsValues.size(), 1, CV_32FC1);
+
+    for (unsigned int j = 0; j < descriptorsValues.size(); j++)
+      Hogfeat.at<float>(j, 0) = descriptorsValues.at(j);
+      
+    return Hogfeat.reshape(1, 1); 
+  }
+
+Mat OcrKnn::image_preprocess(Mat input_image)
+  {
+    Mat preprocessed_image;
+
+    // resize
+    Mat resized;
+    resize(input_image, resized, Size(64, 48));
+
+    // correct skew 
+    Mat deskewed = image_deskew(resized);
+
+    // to grayscale
+    Mat gray_image;
+    cvtColor(deskewed, gray_image, CV_BGR2GRAY);
+
+    // Gaussian blur
+    Mat gaussian_image;
+    GaussianBlur(gray_image, gaussian_image, Size(3,3), 0, 0);
+
+    //Mat adap_thres_image;
+    //adaptiveThreshold(gaussian_image, adap_thres_image, 255, CV_ADAPTIVE_THRESH_GAUSSIAN_C, CV_THRESH_BINARY, 11, 2);
+
+    preprocessed_image = gaussian_image;
+    return preprocessed_image;
+  }
+
+void OcrKnn::load_data()
+  {
+    DIR *dp, *fp;
+    struct dirent *dirp, *firp;
+    char dir_path[255] = "";
+    char file_path[255] = "";
+
+    // load the directory
+
+    dp = opendir(DATASET_LOCATION);
+
+    while ((dirp = readdir(dp)) != NULL)
+      {
+        if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, "..")) continue;
+
+        strcat(dir_path, DATASET_LOCATION);
+        strcat(dir_path, dirp->d_name);
+        strcat(dir_path, "/");
+
+        // read the image from the directory
+
+        fp = opendir(dir_path);
+
+        while ((firp = readdir(fp)) != NULL)
+          {
+            if (!strcmp(firp->d_name, ".") || !strcmp(firp->d_name, "..")) continue;
+
+            // get the class, it is represented by the ASCII value of the character
+            if (strlen(dirp->d_name) == 1)
+              {
+                classes.push_back((int)dirp->d_name[0]);
+              }
+            else
+              {
+                if (strcmp(dirp->d_name, "comma")) classes.push_back(COMMA);
+                else if (strcmp(dirp->d_name, "dash")) classes.push_back(DASH);
+                else if (strcmp(dirp->d_name, "period")) classes.push_back(PERIOD);
+                else if (strcmp(dirp->d_name, "questionmark")) classes.push_back(QUESTIONMARK);
+              }
+
+            strcat(file_path, dir_path);
+            strcat(file_path, firp->d_name);
+            string str(file_path);
+            images.push_back(str);
+
+            file_path[0] = '\0';
+	  }
+        
+        closedir(fp);
+        dir_path[0] = '\0';
+      }
+
+    closedir(dp);
+  }
+
+void OcrKnn::prepare_knn()
+  {
+    Mat src_image, preprocessed_image, hogDescriptor;
+
+    // Naplneni trid(labels) pro obrazky
+    train_classes = Mat(classes).reshape(0, classes.size());
+
+    for (unsigned int i = 0; i < images.size(); i++)
+      {
+        src_image = imread(images.at(i), CV_LOAD_IMAGE_COLOR);
+        preprocessed_image = image_preprocess(src_image);
+        hogDescriptor = get_hog_descriptor(preprocessed_image);
+        train_data.push_back(hogDescriptor);
+      }
+  }
+
+void OcrKnn::train()
+  {
+    knn.train(train_data, train_classes);
+    this->k = knn.get_max_k() / 2;
+  }
+
+float OcrKnn::classify(Mat input_image)
+  {
+    Mat inputImageDescriptor, hogDescriptor;
+    Mat preprocessed_image;
+    preprocessed_image = image_preprocess(input_image);
+    hogDescriptor = get_hog_descriptor(preprocessed_image);
+    inputImageDescriptor.push_back(hogDescriptor);
+    return knn.find_nearest(inputImageDescriptor,this->k);;
+  }
+
+bool OcrKnn::save_to_file()
+  {
+    FileStorage file_storage(KNN_FILENAME,FileStorage::WRITE);
+
+    if (!file_storage.isOpened())
+      return false;
+
+    file_storage << "hog_features" << this->train_data;
+    file_storage << "train_classes" << this->train_classes;
+    file_storage.release();
+    return true;
+  }
+
+bool OcrKnn::load_from_file()
+  {
+    FileStorage file_storage(KNN_FILENAME,FileStorage::READ);
+
+    if (!file_storage.isOpened())
+      return false;
+
+    file_storage["hog_features"] >> this->train_data;
+    file_storage["train_classes"] >> this->train_classes;
+    return true;
+  }
+
+//-----------------------------------------------------------
 
 /*
   Converts an ASCII character to a name used for files in the dataset.
@@ -209,28 +441,57 @@ int main(int argc, char *argv[])
     if (argc < 2)
       {
         cout << "POV Comic Sans OCR, usage:" << endl;
-        cout << "ocr <image filename>" << endl;
+        cout << "ocr <image filename> [classifier]" << endl << endl;
+        cout << "classifier can be:" << endl;
+        cout << "  0 - none" << endl;
+        cout << "  1 - simple (average image comparison)" << endl;
+        cout << "  2 - KNN (default)" << endl;
+        cout << endl;
+        cout << "To retrain the classifier, delete the .xml files." << endl;
         return 0;
       }
 
-    classifier_to_use = 0;   // TODO: read from parameters
-
-    if (classifier_to_use == 0)       // load average images if using a classifier that requires them
+    if (argc >= 3)
       {
-        for (unsigned int i = 0; i < sizeof(POSSIBLE_CHARACTERS); i++)
+        switch (argv[2][0])
           {
-            string filename = DATASET_LOCATION + character_to_filesystem_name(POSSIBLE_CHARACTERS[i]) + "/average.png";
-            average_character_images[i] = imread(filename,CV_LOAD_IMAGE_COLOR);
-            cvtColor(average_character_images[i],average_character_images[i],CV_RGB2GRAY);
-            average_w_to_h_ratios[i] = average_character_images[i].cols / ((double) average_character_images[i].rows);
-          //  adaptiveThreshold(average_character_images[i],average_character_images[i],255,CV_ADAPTIVE_THRESH_MEAN_C,CV_THRESH_BINARY,5,15);            
-
-            /*
-            namedWindow("Display window",WINDOW_AUTOSIZE);
-            imshow("Display window",average_character_images[i]);                
-            waitKey(0); */
+            case '0': classifier_to_use = CLASSIFIER_NONE; break;
+            case '1': classifier_to_use = CLASSIFIER_SIMPLE; break;
+            case '2': classifier_to_use = CLASSIFIER_KNN; break;
+            default: classifier_to_use = CLASSIFIER_KNN; break;
           }
       }
+    else
+      classifier_to_use = CLASSIFIER_KNN;
+
+    OcrKnn ocr_knn;
+
+    switch (classifier_to_use)  // init given classifier
+      {
+        case CLASSIFIER_SIMPLE:
+          for (unsigned int i = 0; i < sizeof(POSSIBLE_CHARACTERS); i++)
+            {
+              string filename = DATASET_LOCATION + character_to_filesystem_name(POSSIBLE_CHARACTERS[i]) + "/average.png";
+              average_character_images[i] = imread(filename,CV_LOAD_IMAGE_COLOR);
+              cvtColor(average_character_images[i],average_character_images[i],CV_RGB2GRAY);
+              average_w_to_h_ratios[i] = average_character_images[i].cols / ((double) average_character_images[i].rows);
+            }
+          break;
+ 
+        case CLASSIFIER_KNN:
+          if (!ocr_knn.load_from_file())
+            { // no file => retrain
+              ocr_knn.load_data();
+              ocr_knn.prepare_knn();
+              ocr_knn.save_to_file();
+            }
+
+          ocr_knn.train();
+          break;
+
+        default:
+          break;
+      } 
 
     Mat input_image;
     input_image = imread(argv[1],CV_LOAD_IMAGE_COLOR);
@@ -288,8 +549,25 @@ int main(int argc, char *argv[])
                     imwrite("chars/img_" + std::to_string(character_number) + ".png",character_cutout);
                   */
 
-                  char recognised_character = classify_simple(character_cutout);
-                    
+                  char recognised_character;
+                  switch (classifier_to_use)
+                    {
+                      case CLASSIFIER_NONE:
+                        recognised_character = '?';
+                        break;
+
+                      case CLASSIFIER_SIMPLE:
+                        recognised_character = classify_simple(character_cutout);
+                        break;
+
+                      case CLASSIFIER_KNN:
+                        recognised_character = ocr_knn.classify(character_cutout);
+                        break;
+
+                      default:
+                        break;
+                    }
+
                   cout << recognised_character;
 
                   char_image -= Scalar(100,100,0);  // highlight the character
