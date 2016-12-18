@@ -58,6 +58,7 @@ typedef struct
 #define CLASSIFIER_SIMPLE 1
 #define CLASSIFIER_KNN 2
 #define CLASSIFIER_NEURAL 3
+#define CLASSIFIER_COMBINED 4         ///< uses all classifiers to vote
 
 int classifier_to_use;      ///< says which classifier will be used, see constants starting with CLASSIFIER_
 
@@ -646,6 +647,7 @@ int main(int argc, char *argv[])
         cout << "  1 - simple (average image comparison)" << endl;
         cout << "  2 - KNN (default)" << endl;
         cout << "  3 - neural" << endl;
+        cout << "  4 - combined (vote)" << endl;
         cout << endl;
         cout << "To retrain the classifier, delete the .xml files." << endl;
         return 0;
@@ -659,6 +661,7 @@ int main(int argc, char *argv[])
             case '1': classifier_to_use = CLASSIFIER_SIMPLE; break;
             case '2': classifier_to_use = CLASSIFIER_KNN; break;
             case '3': classifier_to_use = CLASSIFIER_NEURAL; break;
+            case '4': classifier_to_use = CLASSIFIER_COMBINED; break;
             default: classifier_to_use = CLASSIFIER_KNN; break;
           }
       }
@@ -668,38 +671,39 @@ int main(int argc, char *argv[])
     OcrKnn ocr_knn;
     OcrMlp ocr_mlp;
 
-    switch (classifier_to_use)  // init given classifier
+    // init given classifier:
+
+    if (classifier_to_use != CLASSIFIER_NONE)
       {
-        case CLASSIFIER_SIMPLE:
-          for (unsigned int i = 0; i < sizeof(POSSIBLE_CHARACTERS); i++)
-            {
-              string filename = DATASET_LOCATION + character_to_filesystem_name(POSSIBLE_CHARACTERS[i]) + "/average.png";
-              average_character_images[i] = imread(filename,CV_LOAD_IMAGE_COLOR);
-              cvtColor(average_character_images[i],average_character_images[i],CV_RGB2GRAY);
-              average_w_to_h_ratios[i] = average_character_images[i].cols / ((double) average_character_images[i].rows);
-            }
-          break;
- 
-        case CLASSIFIER_KNN:
-          if (!ocr_knn.load_from_file())
-            {
-              ocr_knn.train();
-              ocr_knn.save_to_file();
-            }
+        if (classifier_to_use == CLASSIFIER_SIMPLE || classifier_to_use == CLASSIFIER_COMBINED)
+          {
+            for (unsigned int i = 0; i < sizeof(POSSIBLE_CHARACTERS); i++)
+              {
+                string filename = DATASET_LOCATION + character_to_filesystem_name(POSSIBLE_CHARACTERS[i]) + "/average.png";
+                average_character_images[i] = imread(filename,CV_LOAD_IMAGE_COLOR);
+                cvtColor(average_character_images[i],average_character_images[i],CV_RGB2GRAY);
+                average_w_to_h_ratios[i] = average_character_images[i].cols / ((double) average_character_images[i].rows);
+              }
+          }
 
-          break;
+        if (classifier_to_use == CLASSIFIER_KNN || classifier_to_use == CLASSIFIER_COMBINED)
+          {
+            if (!ocr_knn.load_from_file())
+              {
+                ocr_knn.train();
+                ocr_knn.save_to_file();
+              }
+          }
 
-        case CLASSIFIER_NEURAL:
-          if (!ocr_mlp.load_from_file())
-            { // no file => retrain
-              ocr_mlp.train();
-              ocr_mlp.save_to_file();
-            }
-          break;
-
-        default:
-          break;
-      } 
+        if (classifier_to_use == CLASSIFIER_NEURAL || classifier_to_use == CLASSIFIER_COMBINED)
+          {
+            if (!ocr_mlp.load_from_file())
+              { // no file => retrain
+                ocr_mlp.train();
+                ocr_mlp.save_to_file();
+              }
+          }
+      }
 
     Mat input_image;
     input_image = imread(argv[1],CV_LOAD_IMAGE_COLOR);
@@ -762,7 +766,8 @@ int main(int argc, char *argv[])
                     imwrite("chars/img_" + std::to_string(character_number) + ".png",character_cutout);
                   */
 
-                  char recognised_character;
+                  char recognised_character, c1, c2, c3;
+                  Mat cutout2, cutout3;
 
                   switch (classifier_to_use)
                     {
@@ -779,9 +784,22 @@ int main(int argc, char *argv[])
                         break;
 
                       case CLASSIFIER_NEURAL:
-//cout << ocr_mlp.classify(imgg) << char(double(ocr_mlp.classify(imgg))) << endl;
-//recognised_character = char(double(ocr_mlp.classify(imgg)));
                         recognised_character = char(round(ocr_mlp.classify(character_cutout)));
+                        break;
+
+                      case CLASSIFIER_COMBINED:
+                        cutout2 = character_cutout.clone();
+                        cutout3 = character_cutout.clone();
+
+                        c1 = classify_simple(character_cutout);
+                        c2 = ocr_knn.classify(cutout2);
+                        c3 = char(round(ocr_mlp.classify(cutout3)));
+
+                        recognised_character = c1;      // by default use this one (the best)
+
+                        if (c2 == c3)
+                          recognised_character = c2;
+
                         break;
 
                       default:
