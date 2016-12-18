@@ -1,119 +1,44 @@
 #/bin/bash
 
-TOTAL_TIME=0
-
-function measure_start
+function run_test
+  # params:
+  # $1 0 (POV OCR) or 1 (tesseract)
+  # $2 filename (without path)
+  # $3 reference filename (without path)
+  # $4 classifier number for POV OCR
   {
-    START_TIME=$(date +%s.%N)
+    pathname="dataset/"
+    filename="$pathname$2"
+    reference_filename="$pathname$3"
+    output_filename="tmp.txt"
+
+    if [ $1 -eq 0 ]; then
+      echo "testing POV OCR, $2, classifier = $4"
+      to_run="./ocr \"$filename\" $4 > $output_filename"
+    else
+      echo "testing tesseract"
+      to_run="tesseract \"$filename\" stdout | sed '/^\s*$/d' > $output_filename"
+    fi
+
+    start_time=$(date +%s.%N)
+    eval ""$to_run""
+    end_time=$(date +%s.%N)
+    time_diff=$(echo "$end_time - $start_time" | bc)
+    echo "  time: $time_diff s"
+
+    if [ $# -ge 4 ] && [ $4 -eq 0 ]; then    # only segmentation, replace everything with "?"
+      echo "  (testing segmentation only)"
+      cat "$reference_filename" | sed "s/[^ ]/?/g" > tmp2.txt
+      reference_filename="tmp2.txt"
+    fi
+
+    error=$(python "compare files.py" "$output_filename" "$reference_filename")
+    echo "  error: $error"
   }
 
-function measure_end
-  {
-    END_TIME=$(date +%s.%N)
-    TIME_DIFF=$(echo "$END_TIME - $START_TIME" | bc)
-    echo "time: " $TIME_DIFF
-    TOTAL_TIME=$(echo "$TOTAL_TIME + $TIME_DIFF" | bc)
-  }
-
-function reset_time
-  {
-    echo "total time: " $TOTAL_TIME
-    TOTAL_TIME=0
-  }
-
-TEST_DIR="test_tmp"
-
-rm -r $TEST_DIR
-mkdir $TEST_DIR
-
-
-
-#-----------------------------------------------------
-
-if true; then
-
-ERROR_SUM=0
-
-echo "========== POV OCR, segmentation only =========="
-
-for PAGE_NUMBER in 1 2 3 4 5 6
-do
-  echo "page "$PAGE_NUMBER
-
-  measure_start
-  ./ocr "dataset/page "$PAGE_NUMBER" small.png" | sed "s/[^ ]/a/g" > $TEST_DIR"/"$PAGE_NUMBER"seg.txt"
-  measure_end
-
-  cat "dataset/page "$PAGE_NUMBER".txt" | sed "s/[^ ]/a/g" > $TEST_DIR"/"$PAGE_NUMBER"seg2.txt"
-
-  ERROR=$(python "compare files.py" $TEST_DIR"/"$PAGE_NUMBER"seg.txt" $TEST_DIR"/"$PAGE_NUMBER"seg2.txt")
-
-  echo "error: "$ERROR
-  ERROR_SUM=$(($ERROR_SUM+$ERROR))
-done
-
-echo "--------"
-reset_time
-echo "total error: "$ERROR_SUM
-
-fi
-
-#-----------------------------------------------------
-
-if true; then
-
-ERROR_SUM=0
-
-echo "=== POV OCR, simple classifier, small pages ==="
-
-for PAGE_NUMBER in 1 2 3 4 5 6
-do
-  echo "page "$PAGE_NUMBER
-
-  measure_start
-  ./ocr "dataset/page "$PAGE_NUMBER" small.png" > $TEST_DIR"/"$PAGE_NUMBER".txt"
-  measure_end
-
-  ERROR=$(python "compare files.py" $TEST_DIR"/"$PAGE_NUMBER".txt" "dataset/page "$PAGE_NUMBER".txt")
-
-  echo "error: "$ERROR
-  ERROR_SUM=$(($ERROR_SUM+$ERROR))
-done
-
-echo "--------"
-reset_time
-echo "total error: "$ERROR_SUM
-
-fi
-
-#-----------------------------------------------------
-
-if true; then
-
-ERROR_SUM=0
-
-echo "=========== tesseract, small pages ============"
-
-for PAGE_NUMBER in 1 2 3 4 5 6
-do
-  echo "page "$PAGE_NUMBER
-
-  measure_start
-  tesseract "dataset/page "$PAGE_NUMBER" small.png" $TEST_DIR"/"$PAGE_NUMBER"tess_a"
-  measure_end
-
-  cat $TEST_DIR"/"$PAGE_NUMBER"tess_a.txt" | sed '/^\s*$/d' > $TEST_DIR"/"$PAGE_NUMBER"tess.txt" # remove empty lines
-
-  ERROR=$(python "compare files.py" $TEST_DIR"/"$PAGE_NUMBER"tess.txt" "dataset/page "$PAGE_NUMBER".txt")
-
-  echo "error: "$ERROR
-  ERROR_SUM=$(($ERROR_SUM+$ERROR))
-done
-
-echo "--------"
-reset_time
-echo "total error: "$ERROR_SUM
-
-fi
-
-#-----------------------------------------------------
+run_test 1 "page 1 small.png" "page 1.txt"
+run_test 0 "page 1 small.png" "page 1.txt" 0
+run_test 0 "page 1 small.png" "page 1.txt" 1
+run_test 0 "page 1 small.png" "page 1.txt" 2
+run_test 0 "page 1 small.png" "page 1.txt" 3
+run_test 0 "page 1 small.png" "page 1.txt" 4
