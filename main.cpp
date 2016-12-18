@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <string.h>
+#include <fstream>
 
 #define DEBUG true
 #define DEBUG_CUTOUT_RESIZE 32
@@ -33,6 +34,9 @@
 #define LINE_BRIGHTNESS_THRESHOLD 0.99
 #define COLUMN_BRIGHTNESS_THRESHOLD 0.97
 #define MAX_SEGMENT_WIDTH_TO_HEIGHT_RATIO 1.1      // if segment's w/h ratio is bigger, it will be split
+
+#define MLP_RESIZE_X 10
+#define MLP_RESIZE_Y 10
 
 #define DATASET_LOCATION "dataset/chars/no noise/"
 #define COMMA 44
@@ -53,6 +57,7 @@ typedef struct
 #define CLASSIFIER_NONE 0
 #define CLASSIFIER_SIMPLE 1
 #define CLASSIFIER_KNN 2
+#define CLASSIFIER_NEURAL 3
 
 int classifier_to_use;      ///< says which classifier will be used, see constants starting with CLASSIFIER_
 
@@ -67,14 +72,228 @@ unsigned char POSSIBLE_CHARACTERS[] =
 Mat average_character_images[sizeof(POSSIBLE_CHARACTERS)];
 double average_w_to_h_ratios[sizeof(POSSIBLE_CHARACTERS)];
 
-class OcrKnn    ///< KNN for OCR
+bool file_exist(string filename)
+  {
+    ifstream infile(filename.c_str());
+    return infile.good();
+  }
+
+//==================================================================
+
+class OcrClassifier
+  {
+    public:
+      virtual void train();
+
+    protected:
+      void train_samples();
+      virtual void train_one_sample(string image_filename,int sample_class)=0;  ///< to be overriden
+  };
+
+void OcrClassifier::train()
+  {
+    this->train_samples();
+  }
+
+void OcrClassifier::train_samples()
+  {
+    DIR *dp, *fp;
+    struct dirent *dirp, *firp;
+    char dir_path[255] = "";
+    char file_path[255] = "";
+
+    // load the directory
+
+    dp = opendir(DATASET_LOCATION);
+
+    while ((dirp = readdir(dp)) != NULL)
+      {
+        if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, "..")) continue;
+
+        strcat(dir_path, DATASET_LOCATION);
+        strcat(dir_path, dirp->d_name);
+        strcat(dir_path, "/");
+
+        // read the image from the directory
+
+        fp = opendir(dir_path);
+
+        while ((firp = readdir(fp)) != NULL)
+          {
+            if (!strcmp(firp->d_name, ".") || !strcmp(firp->d_name, "..")) continue;
+
+            int what_class = dirp->d_name[0];
+
+            // get the class, it is represented by the ASCII value of the character
+            if (strlen(dirp->d_name) != 1)
+              {
+                if (strcmp(dirp->d_name, "comma")) what_class = COMMA;
+                else if (strcmp(dirp->d_name, "dash")) what_class = DASH;
+                else if (strcmp(dirp->d_name, "period")) what_class = PERIOD;
+                else if (strcmp(dirp->d_name, "questionmark")) what_class = QUESTIONMARK;
+              }
+
+            strcat(file_path, dir_path);
+            strcat(file_path, firp->d_name);
+            string str(file_path);
+
+            string what_image = str;
+
+            this->train_one_sample(what_image,what_class);
+
+            file_path[0] = '\0';
+	  }
+        
+        closedir(fp);
+        dir_path[0] = '\0';
+      }
+
+    closedir(dp);
+  }
+
+//==================================================================
+
+class OcrMlp: public OcrClassifier
+  {
+    public:
+      virtual void train();
+      float classify(Mat input_image);
+
+      bool save_to_file();
+      bool load_from_file();
+
+    private:
+      CvANN_MLP mlp;
+      Mat train_data, train_classes;
+
+      virtual void train_one_sample(string image_filename,int sample_class);
+      Mat image_to_vector(Mat image);
+  };
+
+void OcrMlp::train()
+  {
+
+    CvTermCriteria criteria;
+    criteria.max_iter = 50;
+    criteria.epsilon = 0.000000001f;
+    criteria.type = CV_TERMCRIT_ITER | CV_TERMCRIT_EPS;
+
+    CvANN_MLP_TrainParams params;
+    params.train_method = CvANN_MLP_TrainParams::BACKPROP;
+    params.bp_dw_scale = 0.05f;
+    params.bp_moment_scale = 0.05f;
+    params.term_crit = criteria;
+
+    Mat layers = Mat(4,1,CV_32SC1);
+
+    layers.row(0) = Scalar(MLP_RESIZE_X * MLP_RESIZE_Y);
+    layers.row(1) = Scalar(35);
+    layers.row(2) = Scalar(20);
+    layers.row(3) = Scalar(1);
+
+/*    CvTermCriteria criteria;    // works a little
+    criteria.max_iter = 900;
+    criteria.epsilon = 0.0000001f;
+    criteria.type = CV_TERMCRIT_ITER | CV_TERMCRIT_EPS;
+
+    CvANN_MLP_TrainParams params;
+    params.train_method = CvANN_MLP_TrainParams::BACKPROP;
+    params.bp_dw_scale = 0.05f;
+    params.bp_moment_scale = 0.05f;
+    params.term_crit = criteria;
+
+    Mat layers = Mat(4,1,CV_32SC1);
+
+    layers.row(0) = Scalar(MLP_RESIZE_X * MLP_RESIZE_Y);
+    layers.row(1) = Scalar(30);
+    layers.row(2) = Scalar(10);
+    layers.row(3) = Scalar(1); */
+
+/*    CvTermCriteria criteria;       // this piece of code works on training data
+    criteria.max_iter = 500;
+    criteria.epsilon = 0.0000001f;
+    criteria.type = CV_TERMCRIT_ITER | CV_TERMCRIT_EPS;
+
+    CvANN_MLP_TrainParams params;
+    params.train_method = CvANN_MLP_TrainParams::BACKPROP;
+    params.bp_dw_scale = 0.05f;
+    params.bp_moment_scale = 0.05f;
+    params.term_crit = criteria;
+
+    Mat layers = Mat(3,1,CV_32SC1);
+
+    layers.row(0) = Scalar(MLP_RESIZE_X * MLP_RESIZE_Y);
+    layers.row(1) = Scalar(20);
+    layers.row(2) = Scalar(1);
+*/
+
+    this->mlp.create(layers);
+
+    this->train_samples();
+
+    this->train_data.convertTo(this->train_data,CV_32FC1);
+    this->train_classes.convertTo(this->train_classes,CV_32FC1);
+    this->mlp.train(this->train_data,this->train_classes,Mat(),Mat(),params);
+  }
+
+Mat OcrMlp::image_to_vector(Mat image)
+  {
+    resize(image,image,Size(MLP_RESIZE_X,MLP_RESIZE_Y));
+    image = image.reshape(1,1);
+    image.convertTo(image,CV_32FC1);
+    return image;
+  }
+
+float OcrMlp::classify(Mat input_image)
+  {
+    cvtColor(input_image,input_image,cv::COLOR_RGB2GRAY);
+    Mat response;
+
+    response.convertTo(response,CV_32FC1);
+
+    this->mlp.predict(this->image_to_vector(input_image),response);
+
+    return response.at<float>(0,0);
+  }
+
+void OcrMlp::train_one_sample(string image_filename,int sample_class)
+  {
+    Mat image = imread(image_filename,CV_LOAD_IMAGE_GRAYSCALE);
+    this->train_data.push_back(this->image_to_vector(image));
+    this->train_classes.push_back(sample_class);
+  }
+
+bool OcrMlp::save_to_file()
+  {
+    cv::FileStorage file_storage("neural_weights.xml",cv::FileStorage::WRITE);
+
+    if (!file_storage.isOpened())
+      return false;
+
+    this->mlp.write(*file_storage,"mlp");
+    return true;
+  }
+
+bool OcrMlp::load_from_file()
+  {
+    if (!file_exist("neural_weights.xml"))
+      return false;
+
+    this->mlp.load("neural_weights.xml","mlp");
+
+    return true;
+  }
+
+//==================================================================
+
+class OcrKnn: public OcrClassifier
   {
     public:
       OcrKnn();
       void load_data();                          ///< loads the images and prepares the classes
       void prepare_knn();                        ///< gets HOG feature for each image and adds it to the train data
       float classify(Mat input_image);
-      void train();
+      virtual void train();
       void test();
 
       bool save_to_file();
@@ -84,12 +303,14 @@ class OcrKnn    ///< KNN for OCR
       Mat image_deskew(Mat input_image);         ///< corrects the image skew
       Mat get_hog_descriptor(Mat input_image);   ///< gets a HOG descriptor of the image
 
-    private:
+    protected:
       int k;
       Mat train_data, train_classes;
       KNearest knn;
       vector<string> images;
       vector<int> classes;
+
+      virtual void train_one_sample(string image_filename,int sample_class);
   };
 
 OcrKnn::OcrKnn()
@@ -160,59 +381,10 @@ Mat OcrKnn::image_preprocess(Mat input_image)
     return preprocessed_image;
   }
 
-void OcrKnn::load_data()
+void OcrKnn::train_one_sample(string image_filename,int sample_class)
   {
-    DIR *dp, *fp;
-    struct dirent *dirp, *firp;
-    char dir_path[255] = "";
-    char file_path[255] = "";
-
-    // load the directory
-
-    dp = opendir(DATASET_LOCATION);
-
-    while ((dirp = readdir(dp)) != NULL)
-      {
-        if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, "..")) continue;
-
-        strcat(dir_path, DATASET_LOCATION);
-        strcat(dir_path, dirp->d_name);
-        strcat(dir_path, "/");
-
-        // read the image from the directory
-
-        fp = opendir(dir_path);
-
-        while ((firp = readdir(fp)) != NULL)
-          {
-            if (!strcmp(firp->d_name, ".") || !strcmp(firp->d_name, "..")) continue;
-
-            // get the class, it is represented by the ASCII value of the character
-            if (strlen(dirp->d_name) == 1)
-              {
-                classes.push_back((int)dirp->d_name[0]);
-              }
-            else
-              {
-                if (strcmp(dirp->d_name, "comma")) classes.push_back(COMMA);
-                else if (strcmp(dirp->d_name, "dash")) classes.push_back(DASH);
-                else if (strcmp(dirp->d_name, "period")) classes.push_back(PERIOD);
-                else if (strcmp(dirp->d_name, "questionmark")) classes.push_back(QUESTIONMARK);
-              }
-
-            strcat(file_path, dir_path);
-            strcat(file_path, firp->d_name);
-            string str(file_path);
-            images.push_back(str);
-
-            file_path[0] = '\0';
-	  }
-        
-        closedir(fp);
-        dir_path[0] = '\0';
-      }
-
-    closedir(dp);
+    this->images.push_back(image_filename);
+    this->classes.push_back(sample_class);
   }
 
 void OcrKnn::prepare_knn()
@@ -222,7 +394,7 @@ void OcrKnn::prepare_knn()
     // Naplneni trid(labels) pro obrazky
     train_classes = Mat(classes).reshape(0, classes.size());
 
-    for (unsigned int i = 0; i < images.size(); i++)
+    for (unsigned int i = 0; i < this->images.size(); i++)
       {
         src_image = imread(images.at(i), CV_LOAD_IMAGE_COLOR);
         preprocessed_image = image_preprocess(src_image);
@@ -233,7 +405,9 @@ void OcrKnn::prepare_knn()
 
 void OcrKnn::train()
   {
-    knn.train(train_data, train_classes);
+    this->train_samples();
+    this->prepare_knn();
+    this->knn.train(train_data,train_classes);
     this->k = knn.get_max_k() / 2;
   }
 
@@ -269,10 +443,12 @@ bool OcrKnn::load_from_file()
 
     file_storage["hog_features"] >> this->train_data;
     file_storage["train_classes"] >> this->train_classes;
+    this->knn.train(train_data,train_classes);
+    this->k = knn.get_max_k() / 2;
     return true;
   }
 
-//-----------------------------------------------------------
+//==================================================================
 
 /*
   Converts an ASCII character to a name used for files in the dataset.
@@ -469,6 +645,7 @@ int main(int argc, char *argv[])
         cout << "  0 - none" << endl;
         cout << "  1 - simple (average image comparison)" << endl;
         cout << "  2 - KNN (default)" << endl;
+        cout << "  3 - neural" << endl;
         cout << endl;
         cout << "To retrain the classifier, delete the .xml files." << endl;
         return 0;
@@ -481,6 +658,7 @@ int main(int argc, char *argv[])
             case '0': classifier_to_use = CLASSIFIER_NONE; break;
             case '1': classifier_to_use = CLASSIFIER_SIMPLE; break;
             case '2': classifier_to_use = CLASSIFIER_KNN; break;
+            case '3': classifier_to_use = CLASSIFIER_NEURAL; break;
             default: classifier_to_use = CLASSIFIER_KNN; break;
           }
       }
@@ -488,6 +666,7 @@ int main(int argc, char *argv[])
       classifier_to_use = CLASSIFIER_KNN;
 
     OcrKnn ocr_knn;
+    OcrMlp ocr_mlp;
 
     switch (classifier_to_use)  // init given classifier
       {
@@ -503,13 +682,19 @@ int main(int argc, char *argv[])
  
         case CLASSIFIER_KNN:
           if (!ocr_knn.load_from_file())
-            { // no file => retrain
-              ocr_knn.load_data();
-              ocr_knn.prepare_knn();
+            {
+              ocr_knn.train();
               ocr_knn.save_to_file();
             }
 
-          ocr_knn.train();
+          break;
+
+        case CLASSIFIER_NEURAL:
+          if (!ocr_mlp.load_from_file())
+            { // no file => retrain
+              ocr_mlp.train();
+              ocr_mlp.save_to_file();
+            }
           break;
 
         default:
@@ -591,6 +776,12 @@ int main(int argc, char *argv[])
 
                       case CLASSIFIER_KNN:
                         recognised_character = ocr_knn.classify(character_cutout);
+                        break;
+
+                      case CLASSIFIER_NEURAL:
+//cout << ocr_mlp.classify(imgg) << char(double(ocr_mlp.classify(imgg))) << endl;
+//recognised_character = char(double(ocr_mlp.classify(imgg)));
+                        recognised_character = char(round(ocr_mlp.classify(character_cutout)));
                         break;
 
                       default:
