@@ -26,41 +26,41 @@
 \author{Miloslav Číž <xcizmi00>, Daniel Žůrek <xzurek12>}
 \date{\today}
 
-
 %--------------------------------------------------------------------------------
 
 \begin{document}
 \selectlanguage{czech}
 \maketitle
 
+\pagebreak[4]
+
 \section{Zadání a cíle}
 
-Měli jsme implementovat OCR systém za pomoci knihovny OpenCV, přičemž jsme mohli
+Měli jsme implementovat OCR systém pomocí knihovny OpenCV, přičemž jsme mohli
 předpokládat dobrou kvalitu skenovaného textu (málo šumu, dobré zarovnání, bez geometrickcých
-deformací apod.). Mohli jsme se rovněž omezit pouze na jeden font. Zadání jsme si upřesnili
-následujícím způsobem:
+deformací apod.). Mohli jsme se rovněž omezit na jeden font. Zadání jsme si upřesnili takto:
 
 \begin{itemize}
-  \item Napsat OCR systém, nabízející několik různých klasifikátorů, v~jazyce C++ za pomoci knihovny OpenCV.
-  \item Rozpoznávány budou pouze znaky anglické abecedy, plus pár speciálních znaků:
+  \item OCR systém pomocí C++ a~OpenCV, nabízející několik klasifikátorů.
+  \item Rozpoznávány budou jen znaky anglické abecedy a~některé speciální znaky:
   \begin{itemize}
     \item malá písmena: "abcdefghijklmnopqrstuvwxyz"
     \item velká písmena: "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     \item číslice: "0123456789"
     \item speciální znaky: ".,-?"
   \end{itemize}
-  \item Rozpoznáván bude pouze font Comic Sans.
+  \item Rozpoznáván bude jen font Comic Sans.
 \end{itemize}
 
-Cílem bylo vyzkoušet a porovnat různé metody používané pro přepis textu. Cílem nebylo udělat
-obecný nebo optimalizovaný OCR systém.
+Cílem bylo vyzkoušet a~porovnat různé metody používané pro přepis textu. Cílem nebylo udělat
+obecný, velmi robustní nebo optimalizovaný OCR systém.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Řešení}
 
-Samotný systém se dá rozdělit na dvě části: segmentace a~klasifikace. Museli jsme rovněž vytvořit
-dataset pro trénování klasifikátorů.
+Systém se dá rozdělit na dvě části: segmentace a~klasifikace. Museli jsme také vytvořit
+dataset pro trénování klasifikátorů a~pro testování.
 
 Práce v~týmu byla rozdělena takto:
 
@@ -72,35 +72,35 @@ Práce v~týmu byla rozdělena takto:
 \subsection{Dataset}
 \label{sec:dataset}
 
-Pro účely testování jsme napsali sedm A4 stran textu v~programu LibreOffice Writer, fontem Comic Sans. Volili jsme
+Pro účely testování jsme napsali sedm A4 stran textu v~programu LibreOffice Writer fontem Comic Sans. Volili jsme
 různé velikosti fontu (nejčastěji 12 bodů) a~řádkování. Texty byly většinou zkopírovány z~anglických internetových
 stránek jako Wikipedia nebo Reddit. Stránky jsme následně vytiskli a~naskenovali v~rozlišení $2480 \times 3507$ pixelů.
-Díle jsme vytvořili zmenšené a~zašuměné verze stránek. Rovněž jsme z~LibreOffice dokumentů extrahovali čistý text
+Dále jsme vytvořili zmenšené a~zašuměné verze stránek. Rovněž jsme z~LibreOffice dokumentů extrahovali čistý text
 pro pozdější testování kvality přepisu.
 
 Dataset jednotlivých znaků jsme po implementaci segmentace vytvořili segmentací naskenovaných stránek a~ruční
-anotací získaných výřezů. Ve výsledku jsme získali cca 3000 anotovaných vzorků. Dataset je dostupný spolu s~kódem a~skenovanými stránkami
+anotací získaných výřezů. Získali jsme cca 3000 anotovaných vzorků. Dataset je dostupný spolu s~kódem a~skenovanými stránkami
 na serveru GitHub. \footnote{https://github.com/drummyfish/Comic-Sans-OCR} Pomocí Python skriptu jsme
-vytvořili rovněž průměrný obraz každého vzorku pro případné potřeby klasifikátorů.
+vytvořili průměrný obraz každého vzorku pro případné potřeby klasifikátorů.
 
 \begin{figure}[htb]
   \centering
   \includegraphics[width=13.5cm,keepaspectratio]{averages.png}
-  \caption{průměrné obrazy vzorků znaků}
+  \caption{průměrné obrazy vzorků}
   \label{fig:avg}
 \end{figure}
 
 \subsection{Segmentace}
 
-Segmentace hledá nejprve řádky a~poté jednotlivé znaky v~těchto řádcích, přičemž algoritmus je stejný, jen
+Segmentace hledá nejprve řádky a~poté jednotlivé znaky v~těchto řádcích -- algoritmus je pokaždé stejný, jen
 se segmentuje podél různých dimenzí. Toto provádí funkce {\tt segmentation\_1d}, která iteruje po
-řádcích obrazu a~podle prahu průměrné intenzity vytváří spojité segmenty, které navíc nesmí být příliš malé
-ani velké (velké segmenty jsou rozděleny na dva v~polovině).
+řádcích/sloupcích obrazu a~podle prahu průměrné intenzity vytváří spojité segmenty, které navíc nesmí být příliš malé
+ani velké (malé segmenty se zahazují, velké rozdělují).
 
-Každý nalezený výřez je pak ještě před klasifikací upraven tak, že se posunou jeho okraje na přesnou hranici znaku
-(funkce {\tt correct\_character\_cutout}).
+Každý nalezený výřez je ještě před klasifikací upraven tak, že se posunou jeho okraje na pokud možno přesnou hranici znaku
+(pomocí funkce {\tt correct\_character\_cutout}).
 
-Mezery se určují pomocí prahové vzdálenosti segmentů (která je zadána relativně k~výšce řádku).
+Mezery se určují podle vzdálenosti segmentů (0,3 výšky řádku).
 
 \begin{figure}[htb]
   \centering
@@ -110,11 +110,11 @@ Mezery se určují pomocí prahové vzdálenosti segmentů (která je zadána re
 
 \subsection{Klasifikace}
 
-Pro klasifikaci výřezů jsme využili následujících klasifikátorů:
+Program nabízí následující klasifikátory:
 
 \begin{itemize}
   \item rastrový klasifikátor \cite{ocr} - Velmi jednoduchý klasifikátor, který porovnává získaný výřez s~průměrným obrazem každého vzorku pomocí korelace. Bere částečně v~potaz i~poměr rozměrů vzorku a~průměrnou intenzitu.
-  \item KNN, HoG příznaky - 
+  \item KNN, HoG příznaky - K-nearest-neighbours algoritmus na základě histogramů orientovaných gradientů.
   \item MLP - Multilayer perceptron dopředná neuronová síť. Do sítě vstupuje samotný výřez převedený do stupňů šedi a~zmenšený na velikost $10 \times 10$ pixelů. Parametry sítě jsme nalezli experimentálně: 
     \begin{itemize}
       \item vrstvy: 100, 35, 20, 1
@@ -135,24 +135,68 @@ Dále jsme porovnávali naše řešení s~kvalitním open-source OCR enginem tes
 je velmi komplexní a~je postaven na spoustě pokročilých technologií (baseline fitting, slovníky, neuronové sítě,
 dvouprůchodové algoritmy apod.). \cite{tess2}
 
+Testovali jsme rovněž samotnou segmentaci tak, že jsme porovnávali výstupní a~referenční texty, v~nichž jsme
+nahradili všechny znaky kromě mezer jedním stejným znakem, takže se ignorovala klasifikace.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Vyhodnocení}
 
-Tady by mělo být napsané jak to funguje. Protože se jedná o počítačovou grafiku nebo 
-vidění, tak by tady měl byt screenshot, ze ktereho bude poznat jak to funguje.
-K tomu by měla být idealně tabulka s vyhodnocením jak přesně/rychle to funguje. 
+Následuje tabulka výsledků testů.
+
+\begin{table}[htb]
+{\scriptsize
+\begin{tabular}{|l|l|l|l|l|l|l|l|l|l|} 
+ \hline
+ prog. & klas. & str 1 & str 2 & str 3 & str 4 & str 5 & str 6 & str 7 & celkem \\
+ \hline\hline
+ POV   & segm. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
+ \hline
+ POV   & rast. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
+ \hline
+ POV   & KNN & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
+ \hline
+ POV   & MLP & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
+ \hline
+ POV   & komb & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
+ \hline
+ Tess  & segm. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
+ \hline
+ Tess  & def. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
+ \hline
+\end{tabular}
+}
+\caption{Výsledky testů ve formátu [chyba (Levenshteinova vzdálenost), čas]. Časy zahrnují dobu trénování.}
+\end{table}
+
+Pro představu čitelnosti prezentujeme ukázku přepisu naším programem pomocí kombinovaného klasifikátoru:
+
+{
+\centering
+\includegraphics[width=14cm,keepaspectratio]{example.jpg}
+}
+
+{\tt\footnotesize ~\\
+Comic Sans\\
+Comie Sans MS comm0nlY referred to cs Comic Sans- is a sans serif casuai scriR\\
+tpdace designed by Vincem Onnar and released in 1994 bY Microsoft CorpoNtion\\
+It is a c7uai- ncTconmctiu script inspird by cOmic b0ok lqterie imended for\\
+use in informal documems and chiidrenis m1erials\\
+}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Závěr}
 
+Implementovali jsme OCR systém pro font Comic Sans a~vyhodnotili jeho aspekty. Ty jsme porovnali s~používaným systémem Tesseract.
+
 Mezi hlavní zjištěné závěry patří:
 
 \begin{itemize}
+  \item Při dobré kvalitě skenů je jednoduchý přístup velmi použitelný, texty jsou více či méně čitelné. Tesseract je stále mnohem kvalitnější, robustnější a~obecnější, avšak i~mnohem pomalejší.
   \item Zmenšujeme-li výřez znaku na minimální možnou velikost, máme problém s~rozlišování znaků jako ",.'".
   \item Bylo by lepší použít konvoluční neuronovou síť nežli MLP.
-  \item Při dobré kvalitě skenů je jednoduchý přístup velmi použitelný.
+  \item Náš způsob segmentace selhává při malém řádkování.
 \end{itemize}
 
 \bibliographystyle{abbrv}
