@@ -85,11 +85,23 @@ class OcrClassifier
   {
     public:
       virtual void train();
+      virtual bool save_to_file();
+      virtual bool load_from_file();
 
     protected:
       void train_samples();
       virtual void train_one_sample(string image_filename,int sample_class)=0;  ///< to be overriden
   };
+
+bool OcrClassifier::save_to_file()
+  {
+    // doesn't by default
+    return false;
+  }
+bool OcrClassifier::load_from_file()
+  {
+    return false;
+  }
 
 void OcrClassifier::train()
   {
@@ -160,8 +172,8 @@ class OcrMlp: public OcrClassifier
       virtual void train();
       float classify(Mat input_image);
 
-      bool save_to_file();
-      bool load_from_file();
+      virtual bool save_to_file();
+      virtual bool load_from_file();
 
     private:
       CvANN_MLP mlp;
@@ -297,8 +309,8 @@ class OcrKnn: public OcrClassifier
       virtual void train();
       void test();
 
-      bool save_to_file();
-      bool load_from_file();
+      virtual bool save_to_file();
+      virtual bool load_from_file();
 
       Mat image_preprocess(Mat input_image);
       Mat image_deskew(Mat input_image);         ///< corrects the image skew
@@ -364,22 +376,11 @@ Mat OcrKnn::image_preprocess(Mat input_image)
     Mat resized;
     resize(input_image, resized, Size(64, 48));
 
-    // correct skew 
-    Mat deskewed = image_deskew(resized);
-
     // to grayscale
     Mat gray_image;
-    cvtColor(deskewed, gray_image, CV_BGR2GRAY);
+    cvtColor(resized, gray_image, CV_BGR2GRAY);
 
-    // Gaussian blur
-    Mat gaussian_image;
-    GaussianBlur(gray_image, gaussian_image, Size(3,3), 0, 0);
-
-    //Mat adap_thres_image;
-    //adaptiveThreshold(gaussian_image, adap_thres_image, 255, CV_ADAPTIVE_THRESH_GAUSSIAN_C, CV_THRESH_BINARY, 11, 2);
-
-    preprocessed_image = gaussian_image;
-    return preprocessed_image;
+    return resized;
   }
 
 void OcrKnn::train_one_sample(string image_filename,int sample_class)
@@ -795,10 +796,10 @@ int main(int argc, char *argv[])
                         c2 = ocr_knn.classify(cutout2);
                         c3 = char(round(ocr_mlp.classify(cutout3)));
 
-                        recognised_character = c1;      // by default use this one (the best)
+                        recognised_character = c2;      // by default use this one (the best)
 
-                        if (c2 == c3)
-                          recognised_character = c2;
+                        if (c1 == c3)
+                          recognised_character = c1;
 
                         break;
 
