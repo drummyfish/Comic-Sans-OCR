@@ -12,14 +12,14 @@ function run_test
     reference_filename="$pathname$3"
     output_filename="tmp.txt"
 
-    rm knn_features.xml
-    rm neural_weights.xml
+    rm knn_features.xml 2> /dev/null
+    rm neural_weights.xml 2> /dev/null
 
     if [ $1 -eq 0 ]; then
       echo "testing POV OCR, $2, classifier = $4"
       to_run="./ocr \"$filename\" $4 > $output_filename"
     else
-      echo "testing tesseract"
+      echo "testing tesseract, $2"
       to_run="tesseract \"$filename\" stdout | sed '/^\s*$/d' > $output_filename"
     fi
 
