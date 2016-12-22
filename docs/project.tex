@@ -21,7 +21,6 @@
 \usepackage[right]{lineno}
 \renewcommand\linenumberfont{\normalfont\tiny\color{blue}}
 
-
 \title{FIT VUT, Počítačové Vidění\\Comic Sans OCR}
 \author{Miloslav Číž <xcizmi00>, Daniel Žůrek <xzurek12>}
 \date{\today}
@@ -41,7 +40,7 @@ předpokládat dobrou kvalitu skenovaného textu (málo šumu, dobré zarovnán�
 deformací apod.). Mohli jsme se rovněž omezit na jeden font. Zadání jsme si upřesnili takto:
 
 \begin{itemize}
-  \item OCR systém pomocí C++ a~OpenCV, nabízející několik klasifikátorů.
+  \item OCR systém pomocí C++ a~OpenCV, nabízející několik klasifikátorů
   \item Rozpoznávány budou jen znaky anglické abecedy a~některé speciální znaky:
   \begin{itemize}
     \item malá písmena: "abcdefghijklmnopqrstuvwxyz"
@@ -65,15 +64,15 @@ dataset pro trénování klasifikátorů a~pro testování.
 Práce v~týmu byla rozdělena takto:
 
 \begin{itemize}
-  \item Miloslav Číž - dataset, segmentace, MLP, testování, dokumentace 
-  \item David Žůrek - KNN
+  \item Miloslav Číž - dataset, segmentace, MLP, rastr. klas., ukládání do souborů, testování, dokumentace
+  \item David Žůrek - KNN, SVM
 \end{itemize}
 
 \subsection{Dataset}
 \label{sec:dataset}
 
 Pro účely testování jsme napsali sedm A4 stran textu v~programu LibreOffice Writer fontem Comic Sans. Volili jsme
-různé velikosti fontu (nejčastěji 12 bodů) a~řádkování. Texty byly většinou zkopírovány z~anglických internetových
+různé velikosti fontu (nejčastěji 12 bodů), řádkování a~různá zarovnání. Texty byly většinou zkopírovány z~anglických internetových
 stránek jako Wikipedia nebo Reddit. Stránky jsme následně vytiskli a~naskenovali v~rozlišení $2480 \times 3507$ pixelů.
 Dále jsme vytvořili zmenšené a~zašuměné verze stránek. Rovněž jsme z~LibreOffice dokumentů extrahovali čistý text
 pro pozdější testování kvality přepisu.
@@ -82,6 +81,13 @@ Dataset jednotlivých znaků jsme po implementaci segmentace vytvořili segmenta
 anotací získaných výřezů. Získali jsme cca 3000 anotovaných vzorků. Dataset je dostupný spolu s~kódem a~skenovanými stránkami
 na serveru GitHub. \footnote{https://github.com/drummyfish/Comic-Sans-OCR} Pomocí Python skriptu jsme
 vytvořili průměrný obraz každého vzorku pro případné potřeby klasifikátorů.
+
+\begin{figure}[htb]
+  \centering
+  \includegraphics[width=13.5cm,keepaspectratio]{pages.jpg}
+  \caption{strany 1 - 7 (zleva doprava, shora dolů) a~zašuměná strana 1}
+  \label{fig:pages}
+\end{figure}
 
 \begin{figure}[htb]
   \centering
@@ -115,23 +121,24 @@ Program nabízí následující klasifikátory:
 \begin{itemize}
   \item rastrový klasifikátor \cite{ocr} - Velmi jednoduchý klasifikátor, který porovnává získaný výřez s~průměrným obrazem každého vzorku pomocí korelace. Bere částečně v~potaz i~poměr rozměrů vzorku a~průměrnou intenzitu.
   \item KNN, HoG příznaky - K-nearest-neighbours algoritmus na základě histogramů orientovaných gradientů.
+  \item SVM, HoG příznaky - Support vector machine algoritmus na základě histogramů orientovaných gradientů.
   \item MLP - Multilayer perceptron dopředná neuronová síť. Do sítě vstupuje samotný výřez převedený do stupňů šedi a~zmenšený na velikost $10 \times 10$ pixelů. Parametry sítě jsme nalezli experimentálně: 
     \begin{itemize}
       \item vrstvy: 100, 35, 20, 1
       \item backpropagation trénování, maximum 50 iterací, $\epsilon = 10^{-9}$
     \end{itemize}
-  \item složený klasifikátor - Využívá všechny výše zmíněné klasifikátory ke hlasování. Není-li při hlasování většina, bere se názor nejúspěšnějšího klasifikátoru (KNN).
+  \item složený klasifikátor - Využívá všechny výše zmíněné klasifikátory ke hlasování. Není-li při hlasování většina, bere se názor nejúspěšnějšího klasifikátoru (SVM).
 \end{itemize}
 
 Natrénované modely klasifikátorů se ukládají do XML souborů, aby trénování neprobíhalo při každém spuštění znovu.
 
 \section{Testování}
 
-Pro testování jsme využili vlastní skenované stránky (viz sekce \ref{sec:dataset}). Metrikou
+Pro testování jsme využili vlastní skenované stránky (viz obr. \ref{fig:pages}). Metrikou
 při porovnání s~referenčními přepisy byla Levenshteinova vzdálenost, tzn. počet editačních kroků. \cite{lev}
 Využili jsme vlastní automatizované testy napsané v~jazycích Python a BASH.
 
-Dále jsme porovnávali naše řešení s~kvalitním open-source OCR enginem tesseract. \cite{tess} Tesseract
+Dále jsme porovnávali naše řešení s~kvalitním open-source OCR enginem Tesseract. \cite{tess} Tesseract
 je velmi komplexní a~je postaven na spoustě pokročilých technologií (baseline fitting, slovníky, neuronové sítě,
 dvouprůchodové algoritmy apod.). \cite{tess2}
 
@@ -142,34 +149,66 @@ nahradili všechny znaky kromě mezer jedním stejným znakem, takže se ignorov
 
 \section{Vyhodnocení}
 
-Následuje tabulka výsledků testů.
+Z~tabulky \ref{tab:tests} vidíme, že nejúspěšnější klasifikátor byl SVM. Jde-li o rychlost, zdaleka nejlepší
+byl rastrový klasifikátor. Tesseract měl jednoznačně nejmenší chybu na běžných testech, při dobré rychlosti,
+avšak kvůli slovníkovým metodám selhával na str. 5 (Esperanto bez diakritiky), 6 (místní názvy a~nestandardní
+slova) a~7 (seznam znaků). Náš program měl problém se segmentací textu s~malým řádkováním
+na str. 4.
 
 \begin{table}[htb]
 {\scriptsize
 \begin{tabular}{|l|l|l|l|l|l|l|l|l|l|} 
- \hline
- prog. & klas. & str 1 & str 2 & str 3 & str 4 & str 5 & str 6 & str 7 & celkem \\
- \hline\hline
- POV   & segm. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
- \hline
- POV   & rast. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
- \hline
- POV   & KNN & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
- \hline
- POV   & MLP & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
- \hline
- POV   & komb & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
- \hline
- Tess  & segm. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
- \hline
- Tess  & def. & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 & 0000, 00 \\
- \hline
+  \hline
+  prog. & klas. & str 1 & str 2 & str 3 & str 4 & str 5 & str 6 & str 7 & prům. \\
+  \hline\hline
+  POV   & segm. & 130, 0.1 & 162, 0.1 & 47, 0.1  & 720, 0.1 & 163, 0.1 & 333, 0.2 & 148, 0.1 & 243, 0.1 \\
+  \hline
+  POV   & rast. & 492, 0.4 & 525, 0.3 & 231, 0.3 & 969, 0.3 & 457, 0.3 & 1031, 0.5& 396, 0.4 & 585, 0.4 \\
+  \hline
+  POV   & KNN   & 377, 36  & 445, 32  & 163, 29  & 896, 30  & 412, 29  & 878, 54  & 247, 42  & 488, 36  \\
+  \hline
+  POV   & SVM   & 295, 26  & 378, 24  & 114, 22  & 859, 23  & 356, 23  & 757, 30  & 176, 27  & 419, 25  \\
+  \hline
+  POV   & MLP   & 1504, 3  & 1381, 3  & 917, 3   & 1545, 3  & 1108, 3  & 2405, 3  & 1776, 3  & 1519, 3  \\
+  \hline
+  POV   & komb  & 309, 46  & 378, 43  & 124, 36  & 865, 36  & 359, 49  & 753, 61  & 186, 53  & 424, 45  \\
+  \hline
+  Tess  & segm. & 68, 10   & 167, 13  & 64, 3    & 67, 8    & 387, 13  & 279, 32  & 2383, 7  & 487, 12  \\
+  \hline
 \end{tabular}
 }
-\caption{Výsledky testů ve formátu [chyba (Levenshteinova vzdálenost), čas]. Časy zahrnují dobu trénování.}
+\caption{Výsledky testů na zmenšených skenech ve formátu [chyba (Levenshteinova vzdálenost), čas v~s]. Časy zahrnují dobu trénování. Průměrný počet znaků na stranu je 2285.}
+\label{tab:tests}
 \end{table}
 
-Pro představu čitelnosti prezentujeme ukázku přepisu naším programem pomocí kombinovaného klasifikátoru:
+\begin{table}[htb]
+{\scriptsize
+\begin{tabular}{ |l|l|l|l| } 
+  \hline
+  program, klasifikátor & sken                 & čas (s) & chyba \\
+  \hline\hline
+  Tesseract             & page 1 (orig. rezl.) & 4       & 26    \\
+  \hline
+  POV, SVM              & page 1 (orig. rezl.) & 27      & 177   \\
+  \hline
+  Tesseract             & page 2 (orig. rezl.) & 4       & 164   \\
+  \hline
+  POV, SVM              & page 2 (orig. rezl.) & 26      & 195   \\
+  \hline
+  Tesseract             & page 1 small noise   & 2       & 2003  \\
+  \hline
+  POV, SVM              & page 1 small noise   & 19      & 2123  \\
+  \hline
+  Tesseract             & page 1 noise         & 3       & 2123  \\
+  \hline
+  POV,SVM               & page 1 noise         & 19      & 2123  \\
+  \hline
+\end{tabular}
+}
+\caption{dodatečné testy}
+\end{table}
+
+Pro představu čitelnosti prezentujeme ukázku přepisu naším programem pomocí SVM klasifikátoru:
 
 {
 \centering
@@ -178,24 +217,24 @@ Pro představu čitelnosti prezentujeme ukázku přepisu naším programem pomoc
 
 {\tt\footnotesize ~\\
 Comic Sans\\
-Comie Sans MS comm0nlY referred to cs Comic Sans- is a sans serif casuai scriR\\
-tpdace designed by Vincem Onnar and released in 1994 bY Microsoft CorpoNtion\\
-It is a c7uai- ncTconmctiu script inspird by cOmic b0ok lqterie imended for\\
-use in informal documems and chiidrenis m1erials\\
+Comic Sans MS commonly referred to as Comic Sans- is a sans serif casual scri,\\
+lptace designed by Vincem -nnar and released in 1994 by Microsoft CorpoHtion\\
+It is a c-ual- noTconmcti- script inspirl by comic book lJteriM imended for\\
+use in informal documems and children-s mterials
 }
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Závěr}
 
-Implementovali jsme OCR systém pro font Comic Sans a~vyhodnotili jeho aspekty. Ty jsme porovnali s~používaným systémem Tesseract.
-
-Mezi hlavní zjištěné závěry patří:
+Implementovali jsme OCR systém pro font Comic Sans a~vyhodnotili jeho aspekty. Ty jsme porovnali s~používaným systémem Tesseract. Mezi hlavní zjištěné závěry patří:
 
 \begin{itemize}
-  \item Při dobré kvalitě skenů je jednoduchý přístup velmi použitelný, texty jsou více či méně čitelné. Tesseract je stále mnohem kvalitnější, robustnější a~obecnější, avšak i~mnohem pomalejší.
+  \item Při dobré kvalitě skenů je jednoduchý přístup velmi použitelný i~na obecný text, texty jsou více či méně čitelné. Tesseract je stále mnohem kvalitnější,
+        robustnější a~obecnější, avšak někdy i~pomalejší a~horší při použití nestandardních jazyků.
+  \item Spíše než dále zlepšovat klasifikátory by pravděpodobně bylo lepší zavést slovníky.
   \item Zmenšujeme-li výřez znaku na minimální možnou velikost, máme problém s~rozlišování znaků jako ",.'".
-  \item Bylo by lepší použít konvoluční neuronovou síť nežli MLP.
+  \item Bylo by lepší použít konvoluční neuronovou síť než MLP.
   \item Náš způsob segmentace selhává při malém řádkování.
 \end{itemize}
 
