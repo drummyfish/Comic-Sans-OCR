@@ -57,8 +57,9 @@ typedef struct
 #define CLASSIFIER_NONE 0
 #define CLASSIFIER_SIMPLE 1
 #define CLASSIFIER_KNN 2
-#define CLASSIFIER_NEURAL 3
-#define CLASSIFIER_COMBINED 4         ///< uses all classifiers to vote
+#define CLASSIFIER_SVM 3
+#define CLASSIFIER_NEURAL 4
+#define CLASSIFIER_COMBINED 5         ///< uses all classifiers to vote
 
 int classifier_to_use;      ///< says which classifier will be used, see constants starting with CLASSIFIER_
 
@@ -299,14 +300,15 @@ bool OcrMlp::load_from_file()
 
 //==================================================================
 
-class OcrKnn: public OcrClassifier
+class OcrClassifierBasic: public OcrClassifier   ///< Implements simple classifiers such as KNN or SVM
   {
     public:
-      OcrKnn();
+      OcrClassifierBasic();
       void load_data();                          ///< loads the images and prepares the classes
-      float classify(Mat input_image);
       virtual void train();
-      void test();
+
+      float classify_knn(Mat input_image);
+      float classify_svm(Mat input_image);
 
       virtual bool save_to_file();
       virtual bool load_from_file();
@@ -322,14 +324,35 @@ class OcrKnn: public OcrClassifier
       vector<string> images;
       vector<int> classes;
 
+      CvSVMParams params; 
+      CvSVM svm;
+
       virtual void train_one_sample(string image_filename,int sample_class);
   };
 
-OcrKnn::OcrKnn()
+float OcrClassifierBasic::classify_svm(Mat input_image)
   {
+    Mat inputImageDescriptor, hogDescriptor;
+
+    Mat preprocessed_image;
+    preprocessed_image = image_preprocess(input_image);
+
+    // Get HOG feature vector
+    hogDescriptor = get_hog_descriptor(preprocessed_image);
+
+    inputImageDescriptor.push_back(hogDescriptor);
+
+    return svm.predict(inputImageDescriptor);
   }
 
-Mat OcrKnn::get_hog_descriptor(Mat preprocesed_image)
+OcrClassifierBasic::OcrClassifierBasic()
+  {
+    this->params.svm_type = CvSVM::C_SVC;
+    this->params.kernel_type = CvSVM::LINEAR;
+    this->params.term_crit = cvTermCriteria(CV_TERMCRIT_ITER, 100, 1e-6);
+  }
+
+Mat OcrClassifierBasic::get_hog_descriptor(Mat preprocesed_image)
   {
     Mat Hogfeat;
     HOGDescriptor hogDescriptor(Size(32, 16), Size(8, 8), Size(4, 4), Size(4, 4), 9);
@@ -346,7 +369,7 @@ Mat OcrKnn::get_hog_descriptor(Mat preprocesed_image)
     return Hogfeat.reshape(1, 1); 
   }
 
-Mat OcrKnn::image_preprocess(Mat input_image)
+Mat OcrClassifierBasic::image_preprocess(Mat input_image)
   {
     Mat preprocessed_image;
 
@@ -361,19 +384,18 @@ Mat OcrKnn::image_preprocess(Mat input_image)
     return resized;
   }
 
-void OcrKnn::train_one_sample(string image_filename,int sample_class)
+void OcrClassifierBasic::train_one_sample(string image_filename,int sample_class)
   {
     this->images.push_back(image_filename);
     this->classes.push_back(sample_class);
   }
 
-void OcrKnn::train()
+void OcrClassifierBasic::train()
   {
     Mat src_image, preprocessed_image, hogDescriptor;
 
     this->train_samples();
 
-    // Naplneni trid(labels) pro obrazky
     train_classes = Mat(classes).reshape(0, classes.size());
 
     for (unsigned int i = 0; i < this->images.size(); i++)
@@ -384,12 +406,13 @@ void OcrKnn::train()
         train_data.push_back(hogDescriptor);
       }
 
-
     this->knn.train(train_data,train_classes);
     this->k = knn.get_max_k() / 2;
+
+    this->svm.train(this->train_data,this->train_classes,Mat(),Mat(),this->params);
   }
 
-float OcrKnn::classify(Mat input_image)
+float OcrClassifierBasic::classify_knn(Mat input_image)
   {
     Mat inputImageDescriptor, hogDescriptor;
     Mat preprocessed_image;
@@ -399,7 +422,7 @@ float OcrKnn::classify(Mat input_image)
     return knn.find_nearest(inputImageDescriptor,this->k);
   }
 
-bool OcrKnn::save_to_file()
+bool OcrClassifierBasic::save_to_file()
   {
     FileStorage file_storage(KNN_FILENAME,FileStorage::WRITE);
 
@@ -412,7 +435,7 @@ bool OcrKnn::save_to_file()
     return true;
   }
 
-bool OcrKnn::load_from_file()
+bool OcrClassifierBasic::load_from_file()
   {
     FileStorage file_storage(KNN_FILENAME,FileStorage::READ);
 
@@ -423,6 +446,7 @@ bool OcrKnn::load_from_file()
     file_storage["train_classes"] >> this->train_classes;
     this->knn.train(train_data,train_classes);
     this->k = knn.get_max_k() / 2;
+    this->svm.train(this->train_data,this->train_classes,Mat(),Mat(),this->params);
     return true;
   }
 
@@ -613,6 +637,32 @@ void print_segment_1d(segment_1d s)
     cout << "segment: " << s.start << " " << s.length << endl;
   }
 
+int decide_votes(char* vote_array, int array_length)  // Returns most voted char, of the first one (if there is no winner)
+  {
+    int max_index = -1;
+    int max_count = -1;
+    
+    for (int i = 0; i < array_length; i++)
+      {
+        int count = -1;
+
+        for (int j = 0; j < array_length; j++)
+          if (vote_array[i] == vote_array[j])
+            count++;
+
+        if (count > max_count)
+          {
+            max_count = count;
+            max_index = i;
+          }
+      }
+
+    if (max_count > 0)
+      return vote_array[max_index];
+
+    return vote_array[0];
+  }
+
 int main(int argc, char *argv[])
   {
     if (argc < 2)
@@ -622,9 +672,10 @@ int main(int argc, char *argv[])
         cout << "classifier can be:" << endl;
         cout << "  0 - none" << endl;
         cout << "  1 - simple (average image comparison)" << endl;
-        cout << "  2 - KNN (default)" << endl;
-        cout << "  3 - neural" << endl;
-        cout << "  4 - combined (vote)" << endl;
+        cout << "  2 - KNN" << endl;
+        cout << "  3 - SVM (default)" << endl;
+        cout << "  4 - neural" << endl;
+        cout << "  5 - combined (vote)" << endl;
         cout << endl;
         cout << "To retrain the classifier, delete the .xml files." << endl;
         return 0;
@@ -637,15 +688,16 @@ int main(int argc, char *argv[])
             case '0': classifier_to_use = CLASSIFIER_NONE; break;
             case '1': classifier_to_use = CLASSIFIER_SIMPLE; break;
             case '2': classifier_to_use = CLASSIFIER_KNN; break;
-            case '3': classifier_to_use = CLASSIFIER_NEURAL; break;
-            case '4': classifier_to_use = CLASSIFIER_COMBINED; break;
+            case '3': classifier_to_use = CLASSIFIER_SVM; break;
+            case '4': classifier_to_use = CLASSIFIER_NEURAL; break;
+            case '5': classifier_to_use = CLASSIFIER_COMBINED; break;
             default: classifier_to_use = CLASSIFIER_KNN; break;
           }
       }
     else
-      classifier_to_use = CLASSIFIER_KNN;
+      classifier_to_use = CLASSIFIER_SVM;
 
-    OcrKnn ocr_knn;
+    OcrClassifierBasic ocr_basic;
     OcrMlp ocr_mlp;
 
     // init given classifier:
@@ -663,12 +715,12 @@ int main(int argc, char *argv[])
               }
           }
 
-        if (classifier_to_use == CLASSIFIER_KNN || classifier_to_use == CLASSIFIER_COMBINED)
+        if (classifier_to_use == CLASSIFIER_KNN || classifier_to_use == CLASSIFIER_SVM || classifier_to_use == CLASSIFIER_COMBINED)
           {
-            if (!ocr_knn.load_from_file())
+            if (!ocr_basic.load_from_file())
               {
-                ocr_knn.train();
-                ocr_knn.save_to_file();
+                ocr_basic.train();
+                ocr_basic.save_to_file();
               }
           }
 
@@ -743,8 +795,8 @@ int main(int argc, char *argv[])
                     imwrite("chars/img_" + std::to_string(character_number) + ".png",character_cutout);
                   */
 
-                  char recognised_character, c1, c2, c3;
-                  Mat cutout2, cutout3;
+                  char recognised_character, votes[4];
+                  Mat cutout2, cutout3, cutout4;
 
                   switch (classifier_to_use)
                     {
@@ -757,7 +809,11 @@ int main(int argc, char *argv[])
                         break;
 
                       case CLASSIFIER_KNN:
-                        recognised_character = ocr_knn.classify(character_cutout);
+                        recognised_character = ocr_basic.classify_knn(character_cutout);
+                        break;
+
+                      case CLASSIFIER_SVM:
+                        recognised_character = ocr_basic.classify_svm(character_cutout);
                         break;
 
                       case CLASSIFIER_NEURAL:
@@ -767,16 +823,14 @@ int main(int argc, char *argv[])
                       case CLASSIFIER_COMBINED:
                         cutout2 = character_cutout.clone();
                         cutout3 = character_cutout.clone();
+                        cutout4 = character_cutout.clone();
 
-                        c1 = classify_simple(character_cutout);
-                        c2 = ocr_knn.classify(cutout2);
-                        c3 = char(round(ocr_mlp.classify(cutout3)));
+                        votes[0] = ocr_basic.classify_svm(character_cutout);
+                        votes[1] = ocr_basic.classify_knn(cutout2);
+                        votes[2] = classify_simple(cutout3);
+                        votes[3] = char(round(ocr_mlp.classify(cutout4)));
 
-                        recognised_character = c2;      // by default use this one (the best)
-
-                        if (c1 == c3)
-                          recognised_character = c1;
-
+                        recognised_character = decide_votes(votes,4);      // by default use this one (the best)
                         break;
 
                       default:
