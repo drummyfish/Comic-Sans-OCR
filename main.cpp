@@ -304,7 +304,6 @@ class OcrKnn: public OcrClassifier
     public:
       OcrKnn();
       void load_data();                          ///< loads the images and prepares the classes
-      void prepare_knn();                        ///< gets HOG feature for each image and adds it to the train data
       float classify(Mat input_image);
       virtual void train();
       void test();
@@ -328,27 +327,6 @@ class OcrKnn: public OcrClassifier
 
 OcrKnn::OcrKnn()
   {
-  }
-
-Mat OcrKnn::image_deskew(Mat input_image)
-  {
-    Mat thr;
-    threshold(input_image, thr, 200, 255, THRESH_BINARY_INV);
-
-    vector<Point> points;
-    Mat_<uchar>::iterator it = thr.begin<uchar>();
-    Mat_<uchar>::iterator end = thr.end<uchar>();
-
-    for (; it != end; ++it)
-      if (*it) points.push_back(it.pos());
-      	
-    RotatedRect box = minAreaRect(Mat(points));
-    Mat rot_mat = getRotationMatrix2D(box.center, box.angle, 1);
-
-    Mat rotated;
-    warpAffine(input_image, rotated, rot_mat, input_image.size(), INTER_CUBIC);
-	
-    return rotated;
   }
 
 Mat OcrKnn::get_hog_descriptor(Mat preprocesed_image)
@@ -389,9 +367,11 @@ void OcrKnn::train_one_sample(string image_filename,int sample_class)
     this->classes.push_back(sample_class);
   }
 
-void OcrKnn::prepare_knn()
+void OcrKnn::train()
   {
     Mat src_image, preprocessed_image, hogDescriptor;
+
+    this->train_samples();
 
     // Naplneni trid(labels) pro obrazky
     train_classes = Mat(classes).reshape(0, classes.size());
@@ -403,12 +383,8 @@ void OcrKnn::prepare_knn()
         hogDescriptor = get_hog_descriptor(preprocessed_image);
         train_data.push_back(hogDescriptor);
       }
-  }
 
-void OcrKnn::train()
-  {
-    this->train_samples();
-    this->prepare_knn();
+
     this->knn.train(train_data,train_classes);
     this->k = knn.get_max_k() / 2;
   }
@@ -420,7 +396,7 @@ float OcrKnn::classify(Mat input_image)
     preprocessed_image = image_preprocess(input_image);
     hogDescriptor = get_hog_descriptor(preprocessed_image);
     inputImageDescriptor.push_back(hogDescriptor);
-    return knn.find_nearest(inputImageDescriptor,this->k);;
+    return knn.find_nearest(inputImageDescriptor,this->k);
   }
 
 bool OcrKnn::save_to_file()
